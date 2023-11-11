@@ -1,0 +1,6 @@
+(let x (fun ()
+	(fun test-two () 42)
+	(test-two)
+))
+(dump x)
+(dump (x))

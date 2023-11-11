@@ -1,0 +1,20 @@
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+COMMENT = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+identifier = @{ (ASCII_ALPHA | "+" | "-" | "*" | "/" | "<" | ">" | "=")+ }
+integer = _{ ASCII_DIGIT+ }
+number = @{ "-"? ~ integer }
+float = @{ number ~ "." ~ integer }
+
+string = ${ "\"" ~ inner ~ "\"" }
+inner = @{ char* }
+char = {
+    !("\"" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+}
+
+elem = _{ identifier | float | number | string | sexp }
+elems = _{ elem* }
+sexp = { "(" ~ elems ~ ")" }
+file = _{ SOI ~ sexp* ~ EOI }
