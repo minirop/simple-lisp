@@ -1,0 +1,6 @@
+(let x (list 1 2 3))
+(dump (size x))
+(dump (list-get x 0))
+(dump (list-get x 1))
+(dump (list-get x 2))
+(dump (list-get x 3))

@@ -14,6 +14,7 @@ struct Generator {
     headers: Vec<String>,
     functions: Vec<String>,
     main: Vec<String>,
+    inside_expression: isize,
 }
 
 pub fn generate(filename: &str) {
@@ -24,13 +25,14 @@ pub fn generate(filename: &str) {
         headers: vec![],
         functions: vec![],
         main: vec![String::new()],
+        inside_expression: 0,
     };
     let source = gen.generate(filename);
 
     std::fs::create_dir_all("tmp").unwrap();
     fs::write("tmp/main.cpp", source).unwrap();
     let output = Command::new("g++")
-                    .arg("-std=c++20")
+                    .arg("-std=c++23")
                     .arg("-O2")
                     .arg("-Iinclude")
                     .arg("tmp/main.cpp")
@@ -96,7 +98,9 @@ impl Generator {
                         };
                         self.headers.push(format!("Value {};\n", Self::convert_name(&varname)));
                         self.depth += 1;
+                        self.inside_expression = 1;
                         let n = self.generate_node(args[1].clone());
+                        self.inside_expression = 0;
                         self.depth -= 1;
                         self.main.last_mut().unwrap().push_str(&format!("{} = {};\n", Self::convert_name(&varname), n));
                     } else {
@@ -120,10 +124,17 @@ impl Generator {
                 let converted_name = Self::convert_name(&name);
 
                 if self.depth > 0 {
-                    if name.len() > 0 {
+                    if name.len() > 0 && self.inside_expression == 0 {
                         output.push_str(&format!("auto func_{} = ", converted_name));
                     }
-                    output.push_str("(Value::Function([=](std::vector<Value> args1) mutable -> Value {\n");
+                    output.push_str("(Value::Function([=]");
+                    if name.len() > 0 && self.inside_expression > 0 {
+                        panic!("Not supported until gcc/clang support C++23's deducing this.");
+                        output.push_str(&format!("<typename Self>(this Self & {}, ", converted_name));
+                    } else {
+                        output.push_str("(");
+                    }
+                    output.push_str("std::vector<Value> args1) mutable -> Value {\n");
                 } else {
                     if name.len() > 0 {
                         output.push_str(&format!("Value func_{}", converted_name));
@@ -137,6 +148,8 @@ impl Generator {
                     output.push_str(" {\n");
                 }
                 self.functions_names.push(converted_name);
+
+                self.inside_expression = 0;
 
                 for (i, p) in params.iter().enumerate() {
                     output.push_str(&format!("Value {} = ", p.name));
@@ -194,7 +207,9 @@ impl Generator {
                             _ => panic!("{}", args[0]),
                         };
                         self.depth += 1;
+                        self.inside_expression = 1;
                         ret.push_str(&format!("Value {} = {}", Self::convert_name(&varname), self.generate_node(args[1].clone())));
+                        self.inside_expression = 0;
                         self.depth -= 1;
                     },
                     "set" => {

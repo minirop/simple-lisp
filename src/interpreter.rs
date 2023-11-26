@@ -1,3 +1,4 @@
+use std::path::Path;
 use crate::parser::*;
 use crate::Node;
 use std::fs;
@@ -29,26 +30,27 @@ pub struct Visitor {
     natives: HashMap<String, Box<dyn Fn(Vec<Node>) -> Node>>,
     return_value: Option<Node>,
     path: String,
+    libs: Vec<libloading::Library>,
 }
 
 impl Visitor {
     pub fn new() -> Self {
-        let mut nat = HashMap::<String, Box::<dyn Fn(Vec<Node>) -> Node>>::new();
-        nat.insert("+".to_string(), Box::new(plus_operator));
-        nat.insert("-".to_string(), Box::new(minus_operator));
-        nat.insert("*".to_string(), Box::new(mult_operator));
-        nat.insert("/".to_string(), Box::new(div_operator));
-        nat.insert("<".to_string(), Box::new(lt_operator));
-        nat.insert(">".to_string(), Box::new(gt_operator));
-        nat.insert("<=".to_string(), Box::new(le_operator));
-        nat.insert(">=".to_string(), Box::new(ge_operator));
-        nat.insert("=".to_string(), Box::new(eq_operator));
+        let mut natives = HashMap::<String, Box::<dyn Fn(Vec<Node>) -> Node>>::new();
+
+        load_maths_module(&mut natives);
+        load_list_module(&mut natives);
+
+        let mut root = Scope::new();
+        root.variables.insert("null".to_string(), Node::Null);
+        root.variables.insert("true".to_string(), Node::Bool(true));
+        root.variables.insert("false".to_string(), Node::Bool(false));
 
         Self {
-            scopes: vec![Scope::new()],
-            natives: nat,
+            scopes: vec![root],
+            natives: natives,
             return_value: None,
             path: String::new(),
+            libs: vec![],
         }
     }
 
@@ -273,6 +275,7 @@ impl Visitor {
                     Node::String(s) => println!("string: {s}"),
                     Node::Integer(i) => println!("int: {i}"),
                     Node::Float(f) => println!("float: {f}"),
+                    Node::Bool(b) => println!("bool: {b}"),
                     Node::List(list) => println!("list: {:?}", list),
                     Node::Null => println!("null: NULL"),
                     Node::Function { name, .. } => {
@@ -312,7 +315,15 @@ impl Visitor {
                     _ => panic!("load only accept strings. Got {:?}", args[0]),
                 };
                 
-                self.interpret(filename)
+
+                if Path::new(&format!("{}.sl", filename)).exists() {
+                    self.interpret(filename)
+                } else if Path::new(&format!("{}.so", filename)).exists() {
+                    self.load_library(filename)
+                } else {
+                    eprintln!("Could not load module {:?}", filename);
+                    Node::Null
+                }
             },
             _ => {
                 if self.scopes.last_mut().unwrap().functions.contains_key(&name) {
@@ -337,6 +348,17 @@ impl Visitor {
                     }
                 }
             },
+        }
+    }
+
+    fn load_library(&mut self, filename: &str) -> Node {
+        unsafe {
+            let lib = libloading::Library::new(format!("{}.so", filename)).unwrap();
+            let func: libloading::Symbol<unsafe extern fn(&mut HashMap<String, Box<dyn Fn(Vec<Node>) -> Node>>) -> Node> = lib.get(b"module_init").unwrap();
+            println!("load_library: {}", filename);
+            let ret = func(&mut self.natives);
+            self.libs.push(lib);
+            ret
         }
     }
 
@@ -657,4 +679,54 @@ fn eq_operator(args: Vec<Node>) -> Node {
                         |x, y| x == y,
                         |x, y| x == y,
                         args)
+}
+
+fn load_maths_module(natives: &mut HashMap<String, Box<dyn Fn(Vec<Node>) -> Node>>) {
+    natives.insert("+".to_string(), Box::new(plus_operator));
+    natives.insert("-".to_string(), Box::new(minus_operator));
+    natives.insert("*".to_string(), Box::new(mult_operator));
+    natives.insert("/".to_string(), Box::new(div_operator));
+    natives.insert("<".to_string(), Box::new(lt_operator));
+    natives.insert(">".to_string(), Box::new(gt_operator));
+    natives.insert("<=".to_string(), Box::new(le_operator));
+    natives.insert(">=".to_string(), Box::new(ge_operator));
+    natives.insert("=".to_string(), Box::new(eq_operator));
+}
+
+fn load_list_module(natives: &mut HashMap<String, Box<dyn Fn(Vec<Node>) -> Node>>) {
+    natives.insert("size".to_string(), Box::new(list_size));
+    natives.insert("list-get".to_string(), Box::new(list_get));
+}
+
+fn list_size(args: Vec<Node>) -> Node {
+    if args.len() != 1 {
+        panic!("size expects 1 argument. Got {}.", args.len());
+    }
+
+    match &args[0] {
+        Node::List(l) => Node::Integer(l.len() as i32),
+        Node::Null => Node::Integer(0),
+        _ => Node::Integer(1),
+    }
+}
+
+fn list_get(args: Vec<Node>) -> Node {
+    if args.len() != 2 {
+        panic!("list-get expects 2 argument. Got {}.", args.len());
+    }
+
+    let Node::List(list) = &args[0] else {
+        panic!("list-get only accepts list.");
+    };
+
+    let Node::Integer(index) = &args[1] else {
+        panic!("list-get only accepts integer indices.");
+    };
+    let index = *index as usize;
+
+    if list.len() > index {
+        list[index].clone()
+    } else {
+        panic!("list-get out-of-bound access. list size: {}, index provided: {}", list.len(), index);
+    }
 }

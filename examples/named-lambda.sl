@@ -1,4 +1,4 @@
-(let x (fun ()
+(let x (fun y ()
 	(fun test-two () 42)
 	(test-two)
 ))
