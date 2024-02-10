@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 
 #[derive(Debug, Clone)]
@@ -12,6 +13,10 @@ pub enum Node {
         name: String,
         params: Vec<Param>,
         body: Vec<Node>,
+    },
+    Instance {
+        class: String,
+        fields: HashMap<String, Node>,
     },
     Call {
         name: String,

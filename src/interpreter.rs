@@ -11,6 +11,14 @@ use pest_derive::Parser;
 #[grammar = "simple-lisp.pest"]
 pub struct SimpleListParser;
 
+#[derive(Clone)]
+struct Class {
+    //name: String,
+    fields: HashMap<String, Node>,
+    functions: HashMap<String, Node>,
+}
+
+#[derive(Debug)]
 struct Scope {
     functions: HashMap<String, Node>,
     variables: HashMap<String, Node>,
@@ -28,6 +36,7 @@ impl Scope {
 pub struct Visitor {
     scopes: Vec<Scope>,
     natives: HashMap<String, Box<dyn Fn(Vec<Node>) -> Node>>,
+    classes: HashMap<String, Class>,
     return_value: Option<Node>,
     path: String,
     libs: Vec<libloading::Library>,
@@ -48,6 +57,7 @@ impl Visitor {
         Self {
             scopes: vec![root],
             natives: natives,
+            classes: HashMap::new(),
             return_value: None,
             path: String::new(),
             libs: vec![],
@@ -325,6 +335,58 @@ impl Visitor {
                     Node::Null
                 }
             },
+            "class" => {
+                if self.scopes.len() > 2 {
+                    panic!("Class definition can only be done in the main scope.");
+                }
+
+                let name = match &args[0] {
+                    Node::Identifier(id) => id,
+                    _ => panic!("'class' only accept identifiers. Got {:?}", args[0]),
+                };
+                let mut fields: HashMap<String, Node> = HashMap::new();
+                let mut functions: HashMap<String, Node> = HashMap::new();
+
+                for elem in args.iter().skip(1) {
+                    match elem {
+                        Node::Call { name, args } => {
+                            if name != "let" {
+                                panic!("Can't call '{}' inside the body of a class, only 'let' and 'fun' are available.", name);
+                            }
+
+                            let field = match &args[0] {
+                                Node::Identifier(id) => id,
+                                _ => panic!("'let' expects an identifier. Got {:?}", args[0]),
+                            };
+
+                            fields.insert(field.clone(), args[1].clone());
+                        },
+                        Node::Function { name, .. } => {
+                            functions.insert(name.clone(), elem.clone());
+                        },
+                        _ => {
+                            panic!("{:?}", elem);
+                        },
+                    };
+                }
+
+                self.classes.insert(name.clone(), Class {
+                    fields, functions,
+                });
+
+                Node::Null
+            },
+            "new" => {
+                let classname = match &args[0] {
+                    Node::Identifier(id) => id,
+                    _ => panic!("'new' only accept identifiers. Got {:?}", args[0]),
+                };
+                let fields = self.classes[classname].fields.clone();
+                Node::Instance {
+                    class: classname.to_string(),
+                    fields,
+                }
+            },
             _ => {
                 if self.scopes.last_mut().unwrap().functions.contains_key(&name) {
                     self.execute_function(name, args)
@@ -344,6 +406,54 @@ impl Visitor {
 
                         ret
                     } else {
+                        if args.len() > 0 {
+                            let varname = match args[0].clone() {
+                                Node::Identifier(s) => s,
+                                _ => panic!("{}", args[0]),
+                            };
+                            if let Some(var) = &self.find_variable(&varname) {
+                                if let Node::Instance { class, fields } = &var {
+                                    let classtype = self.classes[class].clone();
+
+                                    if classtype.functions.contains_key(&name) {
+                                        if let Node::Function { name, params, body } = &classtype.functions[&name] {
+                                            let mut scope = Scope::new();
+
+                                            if args.len() > params.len() + 1 {
+                                                panic!("Too much arguments given to '{name}'.");
+                                            }
+
+                                            for (i, param) in params.iter().enumerate() {
+                                                if i < args.len() {
+                                                    scope.variables.insert(param.name.clone(), self.evaluate_node(args[i].clone()));
+                                                } else {
+                                                    if let Some(def_val) = &param.default_value {
+                                                        scope.variables.insert(param.name.clone(), self.evaluate_node(def_val.clone()));
+                                                    } else {
+                                                        panic!("Parameter {name} isn't set and has no default value.");
+                                                    }
+                                                }
+                                            }
+
+                                            for (name, value) in fields {
+                                                scope.variables.insert(name.clone(), self.evaluate_node(value.clone()));
+                                            }
+
+                                            self.scopes.push(scope);
+
+                                            let ret = self.evaluate_block(body.clone());
+
+                                            self.scopes.pop();
+                                            self.return_value = None;
+                                            return ret;
+                                        }
+                                    } else {
+                                        panic!("class '{}' doesn't have a function called '{}'.", class, name);
+                                    }
+                                }
+                            }
+                        }
+
                         panic!("Unknown function: {}", name);
                     }
                 }
