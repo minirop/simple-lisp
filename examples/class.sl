@@ -1,12 +1,14 @@
 (class animal
 	(let colour "red")
 	(fun print ()
-		(dump "LOL")
 		(dump colour)
-		(dump "LALA")
+	)
+	(fun set-colour (c)
+		(set colour c)
 	)
 )
 
 (let cat (new animal))
-(dump cat)
+(print cat)
+(set-colour cat "green")
 (print cat)

@@ -13,7 +13,6 @@ pub struct SimpleListParser;
 
 #[derive(Clone)]
 struct Class {
-    //name: String,
     fields: HashMap<String, Node>,
     functions: HashMap<String, Node>,
 }
@@ -425,7 +424,7 @@ impl Visitor {
 
                                             for (i, param) in params.iter().enumerate() {
                                                 if i < args.len() {
-                                                    scope.variables.insert(param.name.clone(), self.evaluate_node(args[i].clone()));
+                                                    scope.variables.insert(param.name.clone(), self.evaluate_node(args[i+1].clone()));
                                                 } else {
                                                     if let Some(def_val) = &param.default_value {
                                                         scope.variables.insert(param.name.clone(), self.evaluate_node(def_val.clone()));
@@ -442,6 +441,19 @@ impl Visitor {
                                             self.scopes.push(scope);
 
                                             let ret = self.evaluate_block(body.clone());
+
+                                            let mut new_fields = HashMap::new();
+
+                                            fields.iter().for_each(|(key, val)| {
+                                                if let Some(f) = self.scopes.last().unwrap().variables.get(key) {
+                                                    new_fields.insert(key.clone(), f.clone());
+                                                } else {
+                                                    new_fields.insert(key.clone(), val.clone());
+                                                }
+                                            });
+
+                                            let new_var = Node::Instance { class: class.clone(), fields: new_fields };
+                                            self.update_variable(&varname, new_var);
 
                                             self.scopes.pop();
                                             self.return_value = None;
@@ -502,7 +514,7 @@ impl Visitor {
                 let mut scope = Scope::new();
 
                 if args.len() > params.len() {
-                    panic!("Too much arguments given to {name}");
+                    panic!("Too much arguments given to '{name}'.");
                 }
 
                 for (i, param) in params.iter().enumerate() {
@@ -512,7 +524,7 @@ impl Visitor {
                         if let Some(def_val) = &param.default_value {
                             scope.variables.insert(param.name.clone(), self.evaluate_node(def_val.clone()));
                         } else {
-                            panic!("Parameter {name} isn't set and has no default value.");
+                            panic!("Parameter '{name}' isn't set and has no default value.");
                         }
                     }
                 }
