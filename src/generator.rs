@@ -131,7 +131,9 @@ impl Generator {
                         self.depth -= 1;
                         self.main.last_mut().unwrap().push_str(&format!("{} = {};\n", Self::convert_name(&varname), n));
                     } else {
-                        self.main.last_mut().unwrap().push_str(&format!("{};\n", res));
+                        if res.len() > 0 {
+                            self.main.last_mut().unwrap().push_str(&format!("{};\n", res));
+                        }
                     }
                 },
                 _ => {
@@ -302,7 +304,7 @@ impl Generator {
                         let truthy = self.generate_node(args[1].clone());
                         let falsy = self.generate_node(args[2].clone());
 
-                        ret.push_str("[=]() mutable -> Value {\n");
+                        ret.push_str(&format!("[={}]() mutable -> Value {{\n", if self.in_class_definition { ", this"} else { "" }));
                         ret.push_str(&format!("if ({}) {{\n", cond));
                         if let Node::Call{ name, .. } = &args[1] {
                             if name == "return" {
@@ -331,7 +333,7 @@ impl Generator {
                         ret.push_str(&format!("return {}", val));
                     },
                     "list" => {
-                        ret.push_str("[=]() mutable -> Value {\n");
+                        ret.push_str(&format!("[={}]() mutable -> Value {{\n", if self.in_class_definition { ", this"} else { "" }));
                         ret.push_str("std::vector<Value> ret1;\n");
                         for arg in args {
                             ret.push_str(&format!("ret1.emplace_back({});\n", self.generate_node(arg.clone())));
@@ -340,7 +342,7 @@ impl Generator {
                         ret.push_str("}()");
                     },
                     "block" => {
-                        ret.push_str("[=]() mutable -> Value {\n");
+                        ret.push_str(&format!("[={}]() mutable -> Value {{\n", if self.in_class_definition { ", this"} else { "" }));
                         ret.push_str("Value ret1;\n");
                         let last = args.len() - 1;
                         for (i, arg) in args.iter().enumerate() {
@@ -360,7 +362,7 @@ impl Generator {
                         ret.push_str("}()");
                     },
                     "dump" => {
-                        ret.push_str("[=]() mutable -> Value {\n");
+                        ret.push_str(&format!("[={}]() mutable -> Value {{\n", if self.in_class_definition { ", this"} else { "" }));
                         let mut prev = String::new();
                         let mut cout = String::from("std::cout");
                         for (i, arg) in args.iter().enumerate() {
@@ -388,7 +390,7 @@ impl Generator {
                         ret.push_str("})");
                     },
                     "switch" => {
-                        ret.push_str("[=]() mutable -> Value {\n");
+                        ret.push_str(&format!("[={}]() mutable -> Value {{\n", if self.in_class_definition { ", this"} else { "" }));
                         let val = self.generate_node(args[0].clone());
                         ret.push_str(&format!("Value test1 = {};\n", val));
 
@@ -420,7 +422,7 @@ impl Generator {
                         let load_output = self.main.last().unwrap().clone();
                         self.main.pop();
 
-                        ret.push_str("[=]() mutable -> Value {\n");
+                        ret.push_str(&format!("[={}]() mutable -> Value {{\n", if self.in_class_definition { ", this"} else { "" }));
                         ret.push_str(&format!("{}", load_output));
                         ret.push_str("}()");
                     },
