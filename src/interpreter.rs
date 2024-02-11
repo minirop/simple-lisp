@@ -379,7 +379,7 @@ impl Visitor {
             "new" => {
                 let classname = match &args[0] {
                     Node::Identifier(id) => id,
-                    _ => panic!("'new' only accept identifiers. Got {:?}", args[0]),
+                    _ => panic!("'new' only accept identifiers. Got {:?}.", args[0]),
                 };
                 let fields = self.classes[classname].fields.clone();
                 Node::Instance {

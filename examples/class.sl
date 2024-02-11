@@ -8,6 +8,13 @@
 	)
 )
 
+(class table
+	(let cat (new animal))
+	(fun print ()
+		(print cat)
+	)
+)
+
 (fun print (c)
 	(dump c)
 )
@@ -18,3 +25,6 @@
 (print cat) /* prints "string: green" */
 (print "hello")
 (print 42)
+(print "==================")
+(let t (new table))
+(print t)

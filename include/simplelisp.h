@@ -9,6 +9,7 @@
 using namespace std::string_literals;
 
 struct ValueImpl;
+class SimpleListObject;
 
 #define IS_NULL(x) std::holds_alternative<std::monostate>(x)
 #define IS_INT(x) std::holds_alternative<int>(x)
@@ -17,6 +18,7 @@ struct ValueImpl;
 #define IS_BOOL(x) std::holds_alternative<bool>(x)
 #define IS_VEC(x) std::holds_alternative<std::vector<Value>>(x)
 #define IS_FUNC(x) std::holds_alternative<Value::Function>(x)
+#define IS_INSTANCE(x) std::holds_alternative<SimpleListObject*>(x)
 
 #define AS_INT(x) std::get<int>(x)
 #define AS_FLOAT(x) std::get<float>(x)
@@ -36,6 +38,7 @@ public:
     Value(std::vector<Value> v) : inner { v } {}
     Value(std::string name, Function&& f) : name { name }, inner { f } {}
     Value(Function&& f) : inner { f } {}
+    Value(SimpleListObject* obj) : inner { obj } {}
     Value(const Value& v) = default;
     Value(Value&& v) = default;
 
@@ -56,6 +59,22 @@ public:
 
         std::cerr << "value is not a function but " << get_type() << '\n';
         std::exit(1);
+    }
+
+    SimpleListObject* as_instance() const
+    {
+        if (is_instance())
+        {
+            return std::get<SimpleListObject*>(inner);
+        }
+
+        std::cerr << "value is not an instance but " << get_type() << '\n';
+        std::exit(1);
+    }
+
+    bool is_instance() const
+    {
+        return IS_INSTANCE(inner);
     }
 
     std::string get_type() const
@@ -90,6 +109,10 @@ public:
         {
             return "function";
         }
+        else if (IS_INSTANCE(inner))
+        {
+            return "instance";
+        }
 
         return "unknown";
     }
@@ -104,7 +127,7 @@ private:
     friend bool operator==(const Value& lhs, const Value& rhs);
 
     std::string name;
-    std::variant<std::monostate, int, float, std::string, std::vector<Value>, Function> inner;
+    std::variant<std::monostate, int, float, std::string, std::vector<Value>, Function, SimpleListObject*> inner;
 };
 
 std::ostream& operator<<(std::ostream& os, const Value& obj)
