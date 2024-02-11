@@ -362,6 +362,7 @@ impl Visitor {
                         },
                         Node::Function { name, .. } => {
                             functions.insert(name.clone(), elem.clone());
+                            self.insert_functions(&name, elem.clone());
                         },
                         _ => {
                             panic!("{:?}", elem);
@@ -405,67 +406,6 @@ impl Visitor {
 
                         ret
                     } else {
-                        if args.len() > 0 {
-                            let varname = match args[0].clone() {
-                                Node::Identifier(s) => s,
-                                _ => panic!("{}", args[0]),
-                            };
-                            if let Some(var) = &self.find_variable(&varname) {
-                                if let Node::Instance { class, fields } = &var {
-                                    let classtype = self.classes[class].clone();
-
-                                    if classtype.functions.contains_key(&name) {
-                                        if let Node::Function { name, params, body } = &classtype.functions[&name] {
-                                            let mut scope = Scope::new();
-
-                                            if args.len() > params.len() + 1 {
-                                                panic!("Too much arguments given to '{name}'.");
-                                            }
-
-                                            for (i, param) in params.iter().enumerate() {
-                                                if i < args.len() {
-                                                    scope.variables.insert(param.name.clone(), self.evaluate_node(args[i+1].clone()));
-                                                } else {
-                                                    if let Some(def_val) = &param.default_value {
-                                                        scope.variables.insert(param.name.clone(), self.evaluate_node(def_val.clone()));
-                                                    } else {
-                                                        panic!("Parameter {name} isn't set and has no default value.");
-                                                    }
-                                                }
-                                            }
-
-                                            for (name, value) in fields {
-                                                scope.variables.insert(name.clone(), self.evaluate_node(value.clone()));
-                                            }
-
-                                            self.scopes.push(scope);
-
-                                            let ret = self.evaluate_block(body.clone());
-
-                                            let mut new_fields = HashMap::new();
-
-                                            fields.iter().for_each(|(key, val)| {
-                                                if let Some(f) = self.scopes.last().unwrap().variables.get(key) {
-                                                    new_fields.insert(key.clone(), f.clone());
-                                                } else {
-                                                    new_fields.insert(key.clone(), val.clone());
-                                                }
-                                            });
-
-                                            let new_var = Node::Instance { class: class.clone(), fields: new_fields };
-                                            self.update_variable(&varname, new_var);
-
-                                            self.scopes.pop();
-                                            self.return_value = None;
-                                            return ret;
-                                        }
-                                    } else {
-                                        panic!("class '{}' doesn't have a function called '{}'.", class, name);
-                                    }
-                                }
-                            }
-                        }
-
                         panic!("Unknown function: {}", name);
                     }
                 }
@@ -509,17 +449,51 @@ impl Visitor {
 
     fn execute_function(&mut self, name: String, args: Vec<Node>) -> Node {
         let func = self.find_function(&name).unwrap();
+        let mut instance_var = None;
+        let mut instance_class = String::new();
+        let mut instance_fields = HashMap::new();
         match func {
             Node::Function { name, params, body } => {
                 let mut scope = Scope::new();
+                let mut f_params = params;
+                let mut f_body = body;
 
-                if args.len() > params.len() {
+                if args.len() > 0 {
+                    if let Node::Identifier(varname) = args[0].clone() {
+                        if let Some(var) = &self.find_variable(&varname) {
+                            if let Node::Instance { class, fields } = &var {
+                                instance_var = Some(varname);
+                                instance_class = class.clone();
+                                instance_fields = fields.clone();
+
+                                let classtype = &self.classes[class];
+                                if !classtype.functions.contains_key(&name) {
+                                    panic!("Class '{class}' doesn't have a function named '{name}'.");
+                                }
+
+                                if let Node::Function { name: _, params, body } = &classtype.functions[&name] {
+                                    f_params = params.clone();
+                                    f_body = body.clone();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let offset = if instance_var.is_some() { 1 } else { 0 };
+                if args.len() > f_params.len() + offset {
                     panic!("Too much arguments given to '{name}'.");
                 }
 
-                for (i, param) in params.iter().enumerate() {
+                if instance_var.is_some() {
+                    for (name, value) in &instance_fields {
+                        scope.variables.insert(name.clone(), self.evaluate_node(value.clone()));
+                    }
+                }
+
+                for (i, param) in f_params.iter().enumerate() {
                     if i < args.len() {
-                        scope.variables.insert(param.name.clone(), self.evaluate_node(args[i].clone()));
+                        scope.variables.insert(param.name.clone(), self.evaluate_node(args[i + offset].clone()));
                     } else {
                         if let Some(def_val) = &param.default_value {
                             scope.variables.insert(param.name.clone(), self.evaluate_node(def_val.clone()));
@@ -531,7 +505,22 @@ impl Visitor {
 
                 self.scopes.push(scope);
 
-                let ret = self.evaluate_block(body);
+                let ret = self.evaluate_block(f_body);
+
+                if let Some(varname) = instance_var {
+                    let mut new_fields = HashMap::new();
+
+                    instance_fields.iter().for_each(|(key, val)| {
+                        if let Some(f) = self.scopes.last().unwrap().variables.get(key) {
+                            new_fields.insert(key.clone(), f.clone());
+                        } else {
+                            new_fields.insert(key.clone(), val.clone());
+                        }
+                    });
+
+                    let new_var = Node::Instance { class: instance_class.clone(), fields: new_fields };
+                    self.update_variable(&varname, new_var);
+                }
 
                 self.scopes.pop();
                 self.return_value = None;

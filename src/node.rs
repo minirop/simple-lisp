@@ -44,19 +44,3 @@ impl fmt::Display for Node {
         }
     }
 }
-/*
-impl fmt::Display for Node {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Node::Function { name, .. } => write!(f, "function({})", name),
-            Node::Call { name, .. } => write!(f, "call({})", name),
-            Node::Integer(i) => write!(f, "integer({i})"),
-            Node::Float(f2) => write!(f, "float({f2})"),
-            Node::String(s) => write!(f, "string(\"{s}\")"),
-            Node::Identifier(s) => write!(f, "identifier({s})"),
-            Node::Bool(b) => write!(f, "bool({b})"),
-            Node::List(list) => write!(f, "list({:?})", list),
-            Node::Null => write!(f, "null"),
-        }
-    }
-}*/

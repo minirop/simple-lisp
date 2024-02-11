@@ -8,7 +8,13 @@
 	)
 )
 
+(fun print (c)
+	(dump c)
+)
+
 (let cat (new animal))
-(print cat)
+(print cat) /* prints "string: red" */
 (set-colour cat "green")
-(print cat)
+(print cat) /* prints "string: green" */
+(print "hello")
+(print 42)
