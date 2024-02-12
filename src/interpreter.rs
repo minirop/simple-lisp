@@ -255,12 +255,24 @@ impl Visitor {
                 let var = self.evaluate_node(args[0].clone());
 
                 for i in 1..(args.len() - 1) {
-                    let value = self.evaluate_node(args[i].clone());
+                    let Node::Call { name, args: list } = &args[i] else {
+                        panic!("switch expects case statements. Got {:?}.", args[i]);
+                    };
+
+                    if name != "case" {
+                        panic!("switch expects case statements. Got {:?}.", name);
+                    }
+
+                    if list.len() != 2 {
+                        panic!("switch expects lists of 2 elements. Got {} elements.", list.len());
+                    }
+
+                    let value = self.evaluate_node(list[0].clone());
 
                     let are_equals = self.check_equality(&var, &value);
 
                     if are_equals {
-                        ret = self.evaluate_node(args[i + 1].clone());
+                        ret = self.evaluate_node(list[1].clone());
                         continue_loop = false;
                     }
 

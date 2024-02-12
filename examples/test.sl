@@ -134,8 +134,8 @@
 
 (fun test-switch ((x (zero)))
 	(switch x
-		0 "hello"
-		1 "world"
+		(case 0 "hello")
+		(case 1 "world")
 		"nobody"
 	)
 )
