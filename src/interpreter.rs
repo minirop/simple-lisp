@@ -641,31 +641,40 @@ fn plus_operator(args: Vec<Node>) -> Node {
 }
 
 fn minus_operator(args: Vec<Node>) -> Node {
-    let mut ret = args[0].clone();
 
-    for n in args.iter().skip(1) {
-        ret = match ret {
-            Node::Integer(i) => {
-                match n {
-                    Node::Integer(j) => Node::Integer(i - j),
-                    Node::Float(f) => Node::Float((i as f32) - f),
-                    Node::String(..) => panic!("Can't substract a string from an int"),
-                    _ => panic!("operator '-' doesn't accept {n} as operand"),
-                }
-            },
-            Node::Float(f) => {
-                match n {
-                    Node::Integer(i) => Node::Float(f - (*i as f32)),
-                    Node::Float(g) => Node::Float(f - g),
-                    Node::String(..) => panic!("Can't substract a string from a float"),
-                    _ => panic!("operator '-' doesn't accept {n} as operand"),
-                }
-            },
-            _ => panic!("operator '-' doesn't accept {n} as operand"),
-        };
+    if args.len() == 1 {
+        match args[0] {
+            Node::Integer(i) => Node::Integer(-i),
+            Node::Float(f) => Node::Float(-f),
+            _ => panic!("operator '-' doesn't accept {} as operand", args[0]),
+        }
+    } else {
+        let mut ret = args[0].clone();
+
+        for n in args.iter().skip(1) {
+            ret = match ret {
+                Node::Integer(i) => {
+                    match n {
+                        Node::Integer(j) => Node::Integer(i - j),
+                        Node::Float(f) => Node::Float((i as f32) - f),
+                        Node::String(..) => panic!("Can't substract a string from an int"),
+                        _ => panic!("operator '-' doesn't accept {n} as operand"),
+                    }
+                },
+                Node::Float(f) => {
+                    match n {
+                        Node::Integer(i) => Node::Float(f - (*i as f32)),
+                        Node::Float(g) => Node::Float(f - g),
+                        Node::String(..) => panic!("Can't substract a string from a float"),
+                        _ => panic!("operator '-' doesn't accept {n} as operand"),
+                    }
+                },
+                _ => panic!("operator '-' doesn't accept {n} as operand"),
+            };
+        }
+
+        ret
     }
-
-    ret
 }
 
 fn mult_operator(args: Vec<Node>) -> Node {
