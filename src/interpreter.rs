@@ -13,6 +13,7 @@ pub struct SimpleListParser;
 
 #[derive(Clone)]
 struct Class {
+    parent: Option<String>,
     fields: HashMap<String, Node>,
     functions: HashMap<String, Node>,
 }
@@ -339,14 +340,23 @@ impl Visitor {
                     panic!("Class definition can only be done in the main scope.");
                 }
 
+                let mut skipped = 1;
                 let name = match &args[0] {
                     Node::Identifier(id) => id,
                     _ => panic!("'class' only accept identifiers. Got {:?}", args[0]),
                 };
+
+                let mut parent = None;
+                if args.len() > 1 {
+                    if let Node::Identifier(parent_class) = &args[1] {
+                        skipped += 1;
+                        parent = Some(parent_class.clone());
+                    }
+                }
                 let mut fields: HashMap<String, Node> = HashMap::new();
                 let mut functions: HashMap<String, Node> = HashMap::new();
 
-                for elem in args.iter().skip(1) {
+                for elem in args.iter().skip(skipped) {
                     match elem {
                         Node::Call { name, args } => {
                             if name != "let" {
@@ -371,7 +381,7 @@ impl Visitor {
                 }
 
                 self.classes.insert(name.clone(), Class {
-                    fields, functions,
+                    parent, fields, functions,
                 });
 
                 Node::Null
@@ -381,7 +391,14 @@ impl Visitor {
                     Node::Identifier(id) => id,
                     _ => panic!("'new' only accept identifiers. Got {:?}.", args[0]),
                 };
-                let fields = self.classes[classname].fields.clone();
+                let mut class = &self.classes[classname];
+                let mut fields = class.fields.clone();
+
+                while class.parent.is_some() {
+                    class = &self.classes[&class.parent.clone().unwrap()];
+                    fields.extend(class.fields.clone());
+                }
+
                 Node::Instance {
                     class: classname.to_string(),
                     fields,
@@ -451,7 +468,9 @@ impl Visitor {
         let func = self.find_function(&name).unwrap();
         let mut instance_var = None;
         let mut instance_class = String::new();
-        let mut instance_fields = HashMap::new();
+        let mut instance_fields: HashMap<String, Node> = HashMap::new();
+        let mut all_instance_fields = HashMap::new();
+
         match func {
             Node::Function { name, params, body } => {
                 let mut scope = Scope::new();
@@ -464,16 +483,32 @@ impl Visitor {
                             if let Node::Instance { class, fields } = &var {
                                 instance_var = Some(varname);
                                 instance_class = class.clone();
-                                instance_fields = fields.clone();
+                                all_instance_fields = fields.clone();
 
-                                let classtype = &self.classes[class];
-                                if !classtype.functions.contains_key(&name) {
-                                    panic!("Class '{class}' doesn't have a function named '{name}'.");
+                                let mut classtype = &self.classes[class];
+                                while !classtype.functions.contains_key(&name) {
+                                    if classtype.parent.is_none() {
+                                        panic!("Class '{class}' doesn't have a function named '{name}'.");
+                                    } else {
+                                        classtype = &self.classes[&classtype.parent.clone().unwrap()];
+                                    }
                                 }
 
                                 if let Node::Function { name: _, params, body } = &classtype.functions[&name] {
                                     f_params = params.clone();
                                     f_body = body.clone();
+                                }
+
+                                loop {
+                                    for (name, _) in &classtype.fields {
+                                        instance_fields.insert(name.clone(), all_instance_fields[name].clone());
+                                    }
+
+                                    if classtype.parent.is_none() {
+                                        break;
+                                    }
+
+                                    classtype = &self.classes[&classtype.parent.clone().unwrap()];
                                 }
                             }
                         }
@@ -508,7 +543,7 @@ impl Visitor {
                 let ret = self.evaluate_block(f_body);
 
                 if let Some(varname) = instance_var {
-                    let mut new_fields = HashMap::new();
+                    let mut new_fields = all_instance_fields;
 
                     instance_fields.iter().for_each(|(key, val)| {
                         if let Some(f) = self.scopes.last().unwrap().variables.get(key) {

@@ -19,12 +19,18 @@
 	(dump c)
 )
 
-(let cat (new animal))
-(print cat) /* prints "string: red" */
-(set-colour cat "green")
-(print cat) /* prints "string: green" */
-(print "hello")
-(print 42)
-(print "==================")
-(let t (new table))
-(print t)
+(class cat animal
+	(let pawn 4)
+	(fun get-colour ()
+		colour
+	)
+)
+
+(class persian cat)
+
+(let kitty (new persian))
+(print kitty) /* prints "string: red" */
+(dump (get-colour kitty)) /* prints "string: red" */
+(set-colour kitty "green")
+(print kitty) /* prints "string: green" */
+(dump (get-colour kitty)) /* prints "string: green" */
