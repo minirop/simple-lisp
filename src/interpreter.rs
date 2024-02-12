@@ -650,7 +650,7 @@ fn minus_operator(args: Vec<Node>) -> Node {
                     Node::Integer(j) => Node::Integer(i - j),
                     Node::Float(f) => Node::Float((i as f32) - f),
                     Node::String(..) => panic!("Can't substract a string from an int"),
-                    _ => panic!("operator '+' doesn't accept {n} as operand"),
+                    _ => panic!("operator '-' doesn't accept {n} as operand"),
                 }
             },
             Node::Float(f) => {
@@ -658,10 +658,10 @@ fn minus_operator(args: Vec<Node>) -> Node {
                     Node::Integer(i) => Node::Float(f - (*i as f32)),
                     Node::Float(g) => Node::Float(f - g),
                     Node::String(..) => panic!("Can't substract a string from a float"),
-                    _ => panic!("operator '+' doesn't accept {n} as operand"),
+                    _ => panic!("operator '-' doesn't accept {n} as operand"),
                 }
             },
-            _ => panic!("operator '+' doesn't accept {n} as operand"),
+            _ => panic!("operator '-' doesn't accept {n} as operand"),
         };
     }
 
@@ -678,7 +678,7 @@ fn mult_operator(args: Vec<Node>) -> Node {
                     Node::Integer(j) => Node::Integer(i * j),
                     Node::Float(f) => Node::Float((i as f32) * f),
                     Node::String(..) => panic!("Can't multiply an int and a string"),
-                    _ => panic!("operator '+' doesn't accept {n} as operand"),
+                    _ => panic!("operator '*' doesn't accept {n} as operand"),
                 }
             },
             Node::Float(f) => {
@@ -686,7 +686,7 @@ fn mult_operator(args: Vec<Node>) -> Node {
                     Node::Integer(i) => Node::Float(f * (*i as f32)),
                     Node::Float(g) => Node::Float(f * g),
                     Node::String(..) => panic!("Can't multiply a float and a string"),
-                    _ => panic!("operator '+' doesn't accept {n} as operand"),
+                    _ => panic!("operator '*' doesn't accept {n} as operand"),
                 }
             },
             Node::String(s) => {
@@ -694,10 +694,10 @@ fn mult_operator(args: Vec<Node>) -> Node {
                     Node::Integer(i) => Node::String(s.repeat(*i as usize)),
                     Node::Float(..) => panic!("Can't multiply a string and a float"),
                     Node::String(..) => panic!("Can't multiply two strings together"),
-                    _ => panic!("operator '+' doesn't accept {n} as operand"),
+                    _ => panic!("operator '*' doesn't accept {n} as operand"),
                 }
             },
-            _ => panic!("operator '+' doesn't accept {n} as operand"),
+            _ => panic!("operator '*' doesn't accept {n} as operand"),
         };
     }
 
@@ -714,7 +714,7 @@ fn div_operator(args: Vec<Node>) -> Node {
                     Node::Integer(j) => Node::Integer(i / j),
                     Node::Float(f) => Node::Float((i as f32) / f),
                     Node::String(..) => panic!("Can't divide an int and a string"),
-                    _ => panic!("operator '+' doesn't accept {n} as operand"),
+                    _ => panic!("operator '/' doesn't accept {n} as operand"),
                 }
             },
             Node::Float(f) => {
@@ -722,7 +722,7 @@ fn div_operator(args: Vec<Node>) -> Node {
                     Node::Integer(i) => Node::Float(f / (*i as f32)),
                     Node::Float(g) => Node::Float(f / g),
                     Node::String(..) => panic!("Can't divide a float and a string"),
-                    _ => panic!("operator '+' doesn't accept {n} as operand"),
+                    _ => panic!("operator '/' doesn't accept {n} as operand"),
                 }
             },
             Node::String(..) => {
@@ -730,10 +730,10 @@ fn div_operator(args: Vec<Node>) -> Node {
                     Node::Integer(..) => panic!("Can't divide a string and an int"),
                     Node::Float(..) => panic!("Can't divide a string and a float"),
                     Node::String(..) => panic!("Can't divide two strings together"),
-                    _ => panic!("operator '+' doesn't accept {n} as operand"),
+                    _ => panic!("operator '/' doesn't accept {n} as operand"),
                 }
             },
-            _ => panic!("operator '+' doesn't accept {n} as operand"),
+            _ => panic!("operator '/' doesn't accept {n} as operand"),
         };
     }
 
