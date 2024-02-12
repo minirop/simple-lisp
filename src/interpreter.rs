@@ -48,6 +48,7 @@ impl Visitor {
 
         load_maths_module(&mut natives);
         load_list_module(&mut natives);
+        load_type_module(&mut natives);
 
         let mut root = Scope::new();
         root.variables.insert("null".to_string(), Node::Null);
@@ -839,11 +840,6 @@ fn load_maths_module(natives: &mut HashMap<String, Box<dyn Fn(Vec<Node>) -> Node
     natives.insert("=".to_string(), Box::new(eq_operator));
 }
 
-fn load_list_module(natives: &mut HashMap<String, Box<dyn Fn(Vec<Node>) -> Node>>) {
-    natives.insert("size".to_string(), Box::new(list_size));
-    natives.insert("list-get".to_string(), Box::new(list_get));
-}
-
 fn list_size(args: Vec<Node>) -> Node {
     if args.len() != 1 {
         panic!("size expects 1 argument. Got {}.", args.len());
@@ -858,21 +854,109 @@ fn list_size(args: Vec<Node>) -> Node {
 
 fn list_get(args: Vec<Node>) -> Node {
     if args.len() != 2 {
-        panic!("list-get expects 2 argument. Got {}.", args.len());
+        panic!("nth expects 2 argument. Got {}.", args.len());
     }
 
     let Node::List(list) = &args[0] else {
-        panic!("list-get only accepts list.");
+        panic!("nth only accepts list.");
     };
 
     let Node::Integer(index) = &args[1] else {
-        panic!("list-get only accepts integer indices.");
+        panic!("nth only accepts integer indices.");
     };
     let index = *index as usize;
 
     if list.len() > index {
         list[index].clone()
     } else {
-        panic!("list-get out-of-bound access. list size: {}, index provided: {}", list.len(), index);
+        panic!("nth out-of-bound access. list size: {}, index provided: {}", list.len(), index);
     }
+}
+
+fn load_list_module(natives: &mut HashMap<String, Box<dyn Fn(Vec<Node>) -> Node>>) {
+    natives.insert("size".to_string(), Box::new(list_size));
+    natives.insert("nth".to_string(), Box::new(list_get));
+}
+
+fn is_null(args: Vec<Node>) -> Node {
+    for a in &args {
+        let Node::Null = a else {
+            return Node::Bool(false);
+        };
+    }
+    Node::Bool(args.len() > 0)
+}
+
+fn is_int(args: Vec<Node>) -> Node {
+    for a in &args {
+        let Node::Integer(_) = a else {
+            return Node::Bool(false);
+        };
+    }
+    Node::Bool(args.len() > 0)
+}
+
+fn is_float(args: Vec<Node>) -> Node {
+    for a in &args {
+        let Node::Float(_) = a else {
+            return Node::Bool(false);
+        };
+    }
+    Node::Bool(args.len() > 0)
+}
+
+fn is_string(args: Vec<Node>) -> Node {
+    for a in &args {
+        let Node::String(_) = a else {
+            return Node::Bool(false);
+        };
+    }
+    Node::Bool(args.len() > 0)
+}
+
+fn is_bool(args: Vec<Node>) -> Node {
+    for a in &args {
+        let Node::Bool(_) = a else {
+            return Node::Bool(false);
+        };
+    }
+    Node::Bool(args.len() > 0)
+}
+
+fn is_list(args: Vec<Node>) -> Node {
+    for a in &args {
+        let Node::List(_) = a else {
+            return Node::Bool(false);
+        };
+    }
+    Node::Bool(args.len() > 0)
+}
+
+fn is_instance(args: Vec<Node>) -> Node {
+    for a in &args {
+        let Node::Instance { .. } = a else {
+            return Node::Bool(false);
+        };
+    }
+    Node::Bool(args.len() > 0)
+}
+
+fn is_function(args: Vec<Node>) -> Node {
+    for a in &args {
+        let Node::Function { .. } = a else {
+            return Node::Bool(false);
+        };
+    }
+    Node::Bool(args.len() > 0)
+}
+
+fn load_type_module(natives: &mut HashMap<String, Box<dyn Fn(Vec<Node>) -> Node>>) {
+    natives.insert("is-null".to_string(), Box::new(is_null));
+    natives.insert("is-int".to_string(), Box::new(is_int));
+    natives.insert("is-float".to_string(), Box::new(is_float));
+    natives.insert("is-string".to_string(), Box::new(is_string));
+    natives.insert("is-bool".to_string(), Box::new(is_bool));
+    natives.insert("is-list".to_string(), Box::new(is_list));
+    natives.insert("is-instance".to_string(), Box::new(is_instance));
+    natives.insert("is-function".to_string(), Box::new(is_function));
 }
