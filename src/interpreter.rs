@@ -102,7 +102,7 @@ impl Visitor {
         let mut ret = Node::Null;
 
         for node in nodes {
-            ret = self.evaluate_node(node);
+            ret = self.evaluate_node(&node);
 
             if let Some(val) = &self.return_value {
                 ret = val.clone();
@@ -113,7 +113,7 @@ impl Visitor {
         ret
     }
 
-    fn evaluate_node(&mut self, node: Node) -> Node {
+    fn evaluate_node(&mut self, node: &Node) -> Node {
         let cpy = node.clone();
 
         match node {
@@ -133,7 +133,7 @@ impl Visitor {
                 let variable = self.find_variable(&s);
                 if let Some(v) = variable {
                     v
-                } else if self.natives.contains_key(&s) {
+                } else if self.natives.contains_key(s) {
                     Node::Function { name: "<native#1>".to_string(), params: vec![], body: vec![], }
                 } else {
                     if let Some(func) = self.find_function(&s) {
@@ -143,15 +143,15 @@ impl Visitor {
                     }
                 }
             },
-            Node::Integer(i) => Node::Integer(i),
-            Node::String(s) => Node::String(s),
-            Node::Float(f) => Node::Float(f),
+            Node::Integer(i) => Node::Integer(*i),
+            Node::String(s) => Node::String(s.clone()),
+            Node::Float(f) => Node::Float(*f),
             _ => panic!("{node}"),
         }
     }
 
-    fn evaluate_call(&mut self, name: String, args: Vec<Node>) -> Node {
-        match name.as_str() {
+    fn evaluate_call(&mut self, name: &str, args: &Vec<Node>) -> Node {
+        match name {
             "let" => {
                 let varname = match args[0].clone() {
                     Node::Identifier(s) => s,
@@ -162,7 +162,7 @@ impl Visitor {
                     panic!("Variable '{varname}' already exists in that scope.");
                 }
 
-                let ret = self.evaluate_node(args[1].clone());
+                let ret = self.evaluate_node(&args[1]);
 
                 let last_scope = self.scopes.last_mut().unwrap();
                 last_scope.variables.insert(varname, ret.clone());
@@ -178,7 +178,7 @@ impl Visitor {
                 let mut ret = Node::Null;
 
                 for arg in args {
-                    ret = self.evaluate_node(arg.clone());
+                    ret = self.evaluate_node(&arg);
                 }
 
                 ret
@@ -193,14 +193,14 @@ impl Visitor {
                     panic!("Variable '{varname}' does not exist in that scope.");
                 }
 
-                let ret = self.evaluate_node(args[1].clone());
+                let ret = self.evaluate_node(&args[1]);
 
                 self.update_variable(&varname, ret.clone());
 
                 ret
             },
             "if" => {
-                let cond = self.evaluate_node(args[0].clone());
+                let cond = self.evaluate_node(&args[0]);
 
                 match cond {
                     Node::Bool(b) => {
@@ -208,9 +208,9 @@ impl Visitor {
 
                         self.scopes.push(Scope::new());
                         if b {
-                            ret = self.evaluate_node(args[1].clone());
+                            ret = self.evaluate_node(&args[1]);
                         } else if args.len() > 2 {
-                            ret = self.evaluate_node(args[2].clone());
+                            ret = self.evaluate_node(&args[2]);
                         } else {
                             ret = Node::Null;
                         }
@@ -226,7 +226,7 @@ impl Visitor {
                 let mut continue_loop = true;
 
                 while continue_loop {
-                    let cond = self.evaluate_node(args[0].clone());
+                    let cond = self.evaluate_node(&args[0]);
                     match cond {
                         Node::Bool(b) => {
                             if b {
@@ -252,7 +252,7 @@ impl Visitor {
             "switch" => {
                 let mut ret = Node::Null;
                 let mut continue_loop = true;
-                let var = self.evaluate_node(args[0].clone());
+                let var = self.evaluate_node(&args[0]);
 
                 for i in 1..(args.len() - 1) {
                     let Node::Call { name, args: list } = &args[i] else {
@@ -267,12 +267,12 @@ impl Visitor {
                         panic!("switch expects lists of 2 elements. Got {} elements.", list.len());
                     }
 
-                    let value = self.evaluate_node(list[0].clone());
+                    let value = self.evaluate_node(&list[0]);
 
                     let are_equals = self.check_equality(&var, &value);
 
                     if are_equals {
-                        ret = self.evaluate_node(list[1].clone());
+                        ret = self.evaluate_node(&list[1]);
                         continue_loop = false;
                     }
 
@@ -288,12 +288,12 @@ impl Visitor {
                 ret
             },
             "return" => {
-                let ret = self.evaluate_node(args[0].clone());
+                let ret = self.evaluate_node(&args[0]);
                 self.return_value = Some(ret.clone());
                 ret
             },
             "dump" => {
-                let ret = self.evaluate_node(args[0].clone());
+                let ret = self.evaluate_node(&args[0]);
                 match ret {
                     Node::String(s) => println!("string: {s}"),
                     Node::Integer(i) => println!("int: {i}"),
@@ -318,13 +318,13 @@ impl Visitor {
                     Node::Identifier(id) => {
                         let mut args = args.clone();
                         args.remove(0);
-                        self.execute_function(id.clone(), args)
+                        self.execute_function(id, &args)
                     },
                     Node::Function { .. } => {
                         self.scopes.last_mut().unwrap().functions.insert("lambda#1".to_string(), args[0].clone());
-                        let mut args = args;
+                        let mut args = args.clone();
                         args.remove(0);
-                        let ret = self.execute_function("lambda#1".to_string(), args);
+                        let ret = self.execute_function("lambda#1", &args);
                         self.scopes.last_mut().unwrap().functions.remove("lambda#1");
 
                         ret
@@ -418,20 +418,20 @@ impl Visitor {
                 }
             },
             _ => {
-                if self.scopes.last_mut().unwrap().functions.contains_key(&name) {
+                if self.scopes.last_mut().unwrap().functions.contains_key(name) {
                     self.execute_function(name, args)
-                } else if self.natives.contains_key(&name) {
+                } else if self.natives.contains_key(name) {
                     self.execute_native_function(name, args)
                 } else {
                     if let Some(func) = &self.find_function(&name) {
                         self.scopes.last_mut().unwrap().functions.insert("lambda#1".to_string(), func.clone());
-                        let ret = self.execute_function("lambda#1".to_string(), args);
+                        let ret = self.execute_function("lambda#1", args);
                         self.scopes.last_mut().unwrap().functions.remove("lambda#1");
 
                         ret
                     } else if let Some(var) = &self.find_variable(&name) {
                         self.scopes.last_mut().unwrap().functions.insert("lambda#1".to_string(), var.clone());
-                        let ret = self.execute_function("lambda#1".to_string(), args);
+                        let ret = self.execute_function("lambda#1", args);
                         self.scopes.last_mut().unwrap().functions.remove("lambda#1");
 
                         ret
@@ -461,23 +461,23 @@ impl Visitor {
         }
     }
 
-    fn evaluate_list(&mut self, args: Vec<Node>) -> Vec<Node> {
+    fn evaluate_list(&mut self, args: &Vec<Node>) -> Vec<Node> {
         let mut values = vec![];
 
         for node in args {
-            values.push(self.evaluate_node(node));
+            values.push(self.evaluate_node(&node));
         }
 
         values
     }
 
-    fn execute_native_function(&mut self, name: String, args: Vec<Node>) -> Node {
+    fn execute_native_function(&mut self, name: &str, args: &Vec<Node>) -> Node {
         let args = self.evaluate_list(args);
 
-        self.natives[&name](args)
+        self.natives[name](args)
     }
 
-    fn execute_function(&mut self, name: String, args: Vec<Node>) -> Node {
+    fn execute_function(&mut self, name: &str, args: &Vec<Node>) -> Node {
         let func = self.find_function(&name).unwrap();
         let mut instance_var = None;
         let mut instance_class = String::new();
@@ -535,16 +535,16 @@ impl Visitor {
 
                 if instance_var.is_some() {
                     for (name, value) in &instance_fields {
-                        scope.variables.insert(name.clone(), self.evaluate_node(value.clone()));
+                        scope.variables.insert(name.clone(), self.evaluate_node(&value));
                     }
                 }
 
                 for (i, param) in f_params.iter().enumerate() {
                     if i < args.len() {
-                        scope.variables.insert(param.name.clone(), self.evaluate_node(args[i + offset].clone()));
+                        scope.variables.insert(param.name.clone(), self.evaluate_node(&args[i + offset]));
                     } else {
                         if let Some(def_val) = &param.default_value {
-                            scope.variables.insert(param.name.clone(), self.evaluate_node(def_val.clone()));
+                            scope.variables.insert(param.name.clone(), self.evaluate_node(&def_val));
                         } else {
                             panic!("Parameter '{name}' isn't set and has no default value.");
                         }
@@ -576,7 +576,7 @@ impl Visitor {
                 ret
             },
             Node::Call { name, args } => {
-                self.evaluate_call(name, args)
+                self.evaluate_call(&name, &args)
             },
             _ => panic!("{name} is not a function."),
         }
