@@ -407,8 +407,8 @@ impl Visitor {
                 let mut class = &self.classes[classname];
                 let mut fields = class.fields.clone();
 
-                while class.parent.is_some() {
-                    class = &self.classes[&class.parent.clone().unwrap()];
+                while let Some(parent) = &class.parent {
+                    class = &self.classes[parent];
                     fields.extend(class.fields.clone());
                 }
 
