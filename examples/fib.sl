@@ -1,7 +1,7 @@
 (fun fib (x)
-	(if (< x 3)
-		(if (= x 0) 0 1)
-		(+ (fib (- x 1)) (fib (- x 2)))
+	(if (lt x 3)
+		(if (eq x 0) 0 1)
+		(add (fib (sub x 1)) (fib (sub x 2)))
 	)
 )
 

@@ -30,7 +30,7 @@
 
 (let kitty (new persian))
 (print kitty) /* prints "string: red" */
-(dump (get-colour kitty)) /* prints "string: red" */
+(print (get-colour kitty) "\n") /* prints "red" */
 (set-colour kitty "green")
 (print kitty) /* prints "string: green" */
-(dump (get-colour kitty)) /* prints "string: green" */
+(print (get-colour kitty) "\n") /* prints "green" */

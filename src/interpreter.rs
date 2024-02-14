@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::path::Path;
 use crate::parser::*;
 use crate::Node;
@@ -6,6 +7,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use pest::Parser;
 use pest_derive::Parser;
+use rand::Rng;
 
 #[derive(Parser)]
 #[grammar = "simple-lisp.pest"]
@@ -46,6 +48,7 @@ impl Visitor {
     pub fn new() -> Self {
         let mut natives = HashMap::<String, Box::<dyn Fn(Vec<Node>) -> Node>>::new();
 
+        load_io_module(&mut natives);
         load_maths_module(&mut natives);
         load_list_module(&mut natives);
         load_type_module(&mut natives);
@@ -417,6 +420,60 @@ impl Visitor {
                     fields,
                 }
             },
+            "inc" => {
+                let mut ret = Node::Null;
+                for a in args {
+                    match a {
+                        Node::Identifier(id) => {
+                            let variable = self.find_variable(&id);
+                            let Some(variable) = variable else {
+                                panic!("Can't increment non-existing variable '{}'.", id);
+                            };
+                            let new_val = match variable {
+                                Node::Integer(i) => Node::Integer(i + 1),
+                                Node::Float(f) => Node::Float(f + 1.0),
+                                _ => panic!("'inc' accepts only integers and floats variables. Got {:?}.", variable),
+                            };
+
+                            ret = new_val.clone();
+                            self.update_variable(&id, new_val);
+                        },
+                        Node::Integer(i) => {
+                            ret = Node::Integer(i + 1);
+                        },
+                        _ => panic!("'inc' only accept identifiers, integers or float. Got {:?}.", args[0]),
+                    };
+                }
+
+                ret
+            },
+            "dec" => {
+                let mut ret = Node::Null;
+                for a in args {
+                    match a {
+                        Node::Identifier(id) => {
+                            let variable = self.find_variable(&id);
+                            let Some(variable) = variable else {
+                                panic!("Can't decrement non-existing variable '{}'.", id);
+                            };
+                            let new_val = match variable {
+                                Node::Integer(i) => Node::Integer(i - 1),
+                                Node::Float(f) => Node::Float(f - 1.0),
+                                _ => panic!("'dec' accepts only integers and floats variables. Got {:?}.", variable),
+                            };
+
+                            ret = new_val.clone();
+                            self.update_variable(&id, new_val);
+                        },
+                        Node::Integer(i) => {
+                            ret = Node::Integer(i - 1);
+                        },
+                        _ => panic!("'dec' only accept identifiers, integers or float. Got {:?}.", args[0]),
+                    };
+                }
+
+                ret
+            },
             _ => {
                 if self.scopes.last_mut().unwrap().functions.contains_key(name) {
                     self.execute_function(name, args)
@@ -528,6 +585,10 @@ impl Visitor {
                     }
                 }
 
+                if instance_var.is_none() && self.natives.contains_key(&name) {
+                    return self.execute_native_function(&name, args);
+                }
+
                 let offset = if instance_var.is_some() { 1 } else { 0 };
                 if args.len() > f_params.len() + offset {
                     panic!("Too much arguments given to '{name}'.");
@@ -626,7 +687,7 @@ fn plus_operator(args: Vec<Node>) -> Node {
                     Node::Integer(j) => Node::Integer(i + j),
                     Node::Float(f) => Node::Float((i as f32) + f),
                     Node::String(s) => Node::String(format!("{i}{s}")),
-                    _ => panic!("operator '+' doesn't accept {n} as operand"),
+                    _ => panic!("'add' doesn't accept {n} as operand"),
                 }
             },
             Node::Float(f) => {
@@ -634,7 +695,7 @@ fn plus_operator(args: Vec<Node>) -> Node {
                     Node::Integer(i) => Node::Float(f + (*i as f32)),
                     Node::Float(g) => Node::Float(f + g),
                     Node::String(s) => Node::String(format!("{f}{s}")),
-                    _ => panic!("operator '+' doesn't accept {n} as operand"),
+                    _ => panic!("'add' doesn't accept {n} as operand"),
                 }
             },
             Node::String(s) => {
@@ -642,10 +703,10 @@ fn plus_operator(args: Vec<Node>) -> Node {
                     Node::Integer(i) => Node::String(format!("{s}{i}")),
                     Node::Float(f) => Node::String(format!("{s}{f}")),
                     Node::String(t) => Node::String(format!("{s}{t}")),
-                    _ => panic!("operator '+' doesn't accept {n} as operand"),
+                    _ => panic!("'add' doesn't accept {n} as operand"),
                 }
             },
-            _ => panic!("operator '+' doesn't accept {n} as operand"),
+            _ => panic!("'add' doesn't accept {n} as operand"),
         };
     }
 
@@ -658,7 +719,7 @@ fn minus_operator(args: Vec<Node>) -> Node {
         match args[0] {
             Node::Integer(i) => Node::Integer(-i),
             Node::Float(f) => Node::Float(-f),
-            _ => panic!("operator '-' doesn't accept {} as operand", args[0]),
+            _ => panic!("'sub' doesn't accept {} as operand", args[0]),
         }
     } else {
         let mut ret = args[0].clone();
@@ -670,7 +731,7 @@ fn minus_operator(args: Vec<Node>) -> Node {
                         Node::Integer(j) => Node::Integer(i - j),
                         Node::Float(f) => Node::Float((i as f32) - f),
                         Node::String(..) => panic!("Can't substract a string from an int"),
-                        _ => panic!("operator '-' doesn't accept {n} as operand"),
+                        _ => panic!("'sub' doesn't accept {n} as operand"),
                     }
                 },
                 Node::Float(f) => {
@@ -678,10 +739,10 @@ fn minus_operator(args: Vec<Node>) -> Node {
                         Node::Integer(i) => Node::Float(f - (*i as f32)),
                         Node::Float(g) => Node::Float(f - g),
                         Node::String(..) => panic!("Can't substract a string from a float"),
-                        _ => panic!("operator '-' doesn't accept {n} as operand"),
+                        _ => panic!("'sub' doesn't accept {n} as operand"),
                     }
                 },
-                _ => panic!("operator '-' doesn't accept {n} as operand"),
+                _ => panic!("'sub' doesn't accept {n} as operand"),
             };
         }
 
@@ -699,7 +760,7 @@ fn mult_operator(args: Vec<Node>) -> Node {
                     Node::Integer(j) => Node::Integer(i * j),
                     Node::Float(f) => Node::Float((i as f32) * f),
                     Node::String(..) => panic!("Can't multiply an int and a string"),
-                    _ => panic!("operator '*' doesn't accept {n} as operand"),
+                    _ => panic!("'mul' doesn't accept {n} as operand"),
                 }
             },
             Node::Float(f) => {
@@ -707,7 +768,7 @@ fn mult_operator(args: Vec<Node>) -> Node {
                     Node::Integer(i) => Node::Float(f * (*i as f32)),
                     Node::Float(g) => Node::Float(f * g),
                     Node::String(..) => panic!("Can't multiply a float and a string"),
-                    _ => panic!("operator '*' doesn't accept {n} as operand"),
+                    _ => panic!("'mul' doesn't accept {n} as operand"),
                 }
             },
             Node::String(s) => {
@@ -715,10 +776,10 @@ fn mult_operator(args: Vec<Node>) -> Node {
                     Node::Integer(i) => Node::String(s.repeat(*i as usize)),
                     Node::Float(..) => panic!("Can't multiply a string and a float"),
                     Node::String(..) => panic!("Can't multiply two strings together"),
-                    _ => panic!("operator '*' doesn't accept {n} as operand"),
+                    _ => panic!("'mul' doesn't accept {n} as operand"),
                 }
             },
-            _ => panic!("operator '*' doesn't accept {n} as operand"),
+            _ => panic!("'mul' doesn't accept {n} as operand"),
         };
     }
 
@@ -735,7 +796,7 @@ fn div_operator(args: Vec<Node>) -> Node {
                     Node::Integer(j) => Node::Integer(i / j),
                     Node::Float(f) => Node::Float((i as f32) / f),
                     Node::String(..) => panic!("Can't divide an int and a string"),
-                    _ => panic!("operator '/' doesn't accept {n} as operand"),
+                    _ => panic!("'div' doesn't accept {n} as operand"),
                 }
             },
             Node::Float(f) => {
@@ -743,7 +804,7 @@ fn div_operator(args: Vec<Node>) -> Node {
                     Node::Integer(i) => Node::Float(f / (*i as f32)),
                     Node::Float(g) => Node::Float(f / g),
                     Node::String(..) => panic!("Can't divide a float and a string"),
-                    _ => panic!("operator '/' doesn't accept {n} as operand"),
+                    _ => panic!("'div' doesn't accept {n} as operand"),
                 }
             },
             Node::String(..) => {
@@ -751,10 +812,10 @@ fn div_operator(args: Vec<Node>) -> Node {
                     Node::Integer(..) => panic!("Can't divide a string and an int"),
                     Node::Float(..) => panic!("Can't divide a string and a float"),
                     Node::String(..) => panic!("Can't divide two strings together"),
-                    _ => panic!("operator '/' doesn't accept {n} as operand"),
+                    _ => panic!("'div' doesn't accept {n} as operand"),
                 }
             },
-            _ => panic!("operator '/' doesn't accept {n} as operand"),
+            _ => panic!("'div' doesn't accept {n} as operand"),
         };
     }
 
@@ -774,7 +835,7 @@ fn cmp_binary_operator<I, F, S>(name: &str,
     let left = args[0].clone();
     let right = args[1].clone();
 
-    if name == "=" {
+    if name == "eq" {
         if std::mem::discriminant(&left) != std::mem::discriminant(&right) {
             return Node::Bool(false);
         }
@@ -810,7 +871,7 @@ fn cmp_binary_operator<I, F, S>(name: &str,
 }
 
 fn lt_operator(args: Vec<Node>) -> Node {
-    cmp_binary_operator("<",
+    cmp_binary_operator("lt",
                         |x, y| x < y,
                         |x, y| x < y,
                         |x, y| x < y,
@@ -818,7 +879,7 @@ fn lt_operator(args: Vec<Node>) -> Node {
 }
 
 fn le_operator(args: Vec<Node>) -> Node {
-    cmp_binary_operator("<=",
+    cmp_binary_operator("le",
                         |x, y| x <= y,
                         |x, y| x <= y,
                         |x, y| x <= y,
@@ -826,7 +887,7 @@ fn le_operator(args: Vec<Node>) -> Node {
 }
 
 fn gt_operator(args: Vec<Node>) -> Node {
-    cmp_binary_operator(">",
+    cmp_binary_operator("gt",
                         |x, y| x > y,
                         |x, y| x > y,
                         |x, y| x > y,
@@ -834,7 +895,7 @@ fn gt_operator(args: Vec<Node>) -> Node {
 }
 
 fn ge_operator(args: Vec<Node>) -> Node {
-    cmp_binary_operator(">=",
+    cmp_binary_operator("ge",
                         |x, y| x >= y,
                         |x, y| x >= y,
                         |x, y| x >= y,
@@ -842,23 +903,62 @@ fn ge_operator(args: Vec<Node>) -> Node {
 }
 
 fn eq_operator(args: Vec<Node>) -> Node {
-    cmp_binary_operator("=",
+    cmp_binary_operator("eq",
                         |x, y| x == y,
                         |x, y| x == y,
                         |x, y| x == y,
                         args)
 }
 
+fn neq_operator(args: Vec<Node>) -> Node {
+    cmp_binary_operator("neq",
+                        |x, y| x != y,
+                        |x, y| x != y,
+                        |x, y| x != y,
+                        args)
+}
+
+fn random(args: Vec<Node>) -> Node {
+    let mut rng = rand::thread_rng();
+
+    match args.len() {
+        0 => Node::Float(rng.gen::<f32>()),
+        1 => {
+            let Node::Integer(max) = args[0] else {
+                panic!("'random' expects only integer arguments. Got {:?}.", args[0]);
+            };
+
+            let val: i32 = rng.gen_range(0..max);
+            Node::Integer(val)
+        },
+        2 => {
+            let Node::Integer(min) = args[0] else {
+                panic!("'random' expects only integer arguments. Got {:?}.", args[0]);
+            };
+            let Node::Integer(max) = args[1] else {
+                panic!("'random' expects only integer arguments. Got {:?}.", args[0]);
+            };
+
+            let val: i32 = rng.gen_range(min..max);
+            Node::Integer(val)
+        },
+        _ => panic!("'random' expects between 0 and 2 arguments. Got {}.", args.len()),
+    }
+}
+
 fn load_maths_module(natives: &mut HashMap<String, Box<dyn Fn(Vec<Node>) -> Node>>) {
-    natives.insert("+".to_string(), Box::new(plus_operator));
-    natives.insert("-".to_string(), Box::new(minus_operator));
-    natives.insert("*".to_string(), Box::new(mult_operator));
-    natives.insert("/".to_string(), Box::new(div_operator));
-    natives.insert("<".to_string(), Box::new(lt_operator));
-    natives.insert(">".to_string(), Box::new(gt_operator));
-    natives.insert("<=".to_string(), Box::new(le_operator));
-    natives.insert(">=".to_string(), Box::new(ge_operator));
-    natives.insert("=".to_string(), Box::new(eq_operator));
+    natives.insert("add".to_string(), Box::new(plus_operator));
+    natives.insert("sub".to_string(), Box::new(minus_operator));
+    natives.insert("mul".to_string(), Box::new(mult_operator));
+    natives.insert("div".to_string(), Box::new(div_operator));
+    natives.insert("lt".to_string(), Box::new(lt_operator));
+    natives.insert("gt".to_string(), Box::new(gt_operator));
+    natives.insert("le".to_string(), Box::new(le_operator));
+    natives.insert("ge".to_string(), Box::new(ge_operator));
+    natives.insert("eq".to_string(), Box::new(eq_operator));
+    natives.insert("neq".to_string(), Box::new(neq_operator));
+
+    natives.insert("random".to_string(), Box::new(random));
 }
 
 fn list_size(args: Vec<Node>) -> Node {
@@ -980,4 +1080,73 @@ fn load_type_module(natives: &mut HashMap<String, Box<dyn Fn(Vec<Node>) -> Node>
     natives.insert("is-list".to_string(), Box::new(is_list));
     natives.insert("is-instance".to_string(), Box::new(is_instance));
     natives.insert("is-function".to_string(), Box::new(is_function));
+}
+
+fn println(args: Vec<Node>) -> Node {
+    print(args);
+    println!("");
+    Node::Null
+}
+
+fn print(args: Vec<Node>) -> Node {
+    for a in &args {
+        match a {
+            Node::Integer(i) => print!("{i}"),
+            Node::Float(f) => print!("{f}"),
+            Node::Bool(b) => print!("{b}"),
+            Node::String(s) => print!("{}", unescaper::unescape(s).unwrap()),
+            Node::Null => print!("null"),
+            _ => print!("<error>"),
+        };
+    }
+    std::io::stdout().flush().unwrap();
+
+    Node::Null
+}
+
+fn read(_args: Vec<Node>) -> Node {
+    let mut ret = String::new();
+
+    std::io::stdin()
+        .read_line(&mut ret)
+        .expect("Failed to read line");
+
+    Node::String(ret.trim().to_string())
+}
+
+fn read_int(_args: Vec<Node>) -> Node {
+    let mut ret = String::new();
+
+    std::io::stdin()
+        .read_line(&mut ret)
+        .expect("Failed to read line");
+
+    match ret.trim().parse::<i32>() {
+        Ok(i) => Node::Integer(i),
+        Err(e) => {
+            println!("{:?}", e);
+            Node::Null
+        },
+    }
+}
+
+fn read_float(_args: Vec<Node>) -> Node {
+    let mut ret = String::new();
+
+    std::io::stdin()
+        .read_line(&mut ret)
+        .expect("Failed to read line");
+
+    match ret.parse::<f32>() {
+        Ok(i) => Node::Float(i),
+        Err(_) => Node::Null,
+    }
+}
+
+fn load_io_module(natives: &mut HashMap<String, Box<dyn Fn(Vec<Node>) -> Node>>) {
+    natives.insert("print".to_string(), Box::new(print));
+    natives.insert("println".to_string(), Box::new(println));
+    natives.insert("read".to_string(), Box::new(read));
+    natives.insert("read-int".to_string(), Box::new(read_int));
+    natives.insert("read-float".to_string(), Box::new(read_float));
 }

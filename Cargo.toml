@@ -8,3 +8,5 @@ clap = { version = "4.4.7", features = ["derive"] }
 libloading = "0.8.1"
 pest = "2.7.5"
 pest_derive = "2.7.5"
+rand = "0.8.5"
+unescaper = "0.1.4"

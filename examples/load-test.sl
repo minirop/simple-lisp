@@ -1,4 +1,4 @@
-(fun foo (x) (+ x 1))
+(fun foo (x) (add x 1))
 (let bar 41)
-(dump (load "maths")) /* print 42 */
-(dump (mul 3 4))      /* print 12 */
+(println (load "maths")) /* print 42 */
+(println (mul 3 4))      /* print 12 */

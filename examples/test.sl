@@ -1,12 +1,4 @@
-(fun add (a b)
-	(+ a b)
-)
-
 (dump (add 1 2)) /* prints 3 */
-
-(fun sub (a b)
-	(- a b)
-)
 
 (dump (sub 1 2)) /* prints -1 */
 
@@ -19,14 +11,14 @@
 
 (let c 0)
 (fun test-two (a (b (add c c)))
-	(+ a b)
+	(add a b)
 )
 
 (dump (test-two 5))   /* prints 5 */
 (dump (test-two 6 6)) /* prints 12 */
 
 (fun lower (a b)
-	(if (< a b)
+	(if (lt a b)
 		"a is lower than b"
 		"b is lower or equal than a"
 	)
@@ -36,7 +28,7 @@
 (dump (lower 2 1)) /* prints b is lower or equal than a */
 
 (fun lower-or-equal (a b)
-	(if (<= a b)
+	(if (le a b)
 		"a is lower or equal to b"
 		"b is lower than a"
 	)
@@ -46,7 +38,7 @@
 (dump (lower-or-equal 2 1)) /* prints b is lower than a */
 
 (fun test-return (x)
-	(if (= x 10)
+	(if (eq x 10)
 		(return 1)
 		(return 0)
 	)
@@ -56,7 +48,7 @@
 (dump (test-return 10)) /* prints 1 */
 
 (fun test-return-string (x)
-	(if (= x "hello")
+	(if (eq x "hello")
 		(return "world")
 		(return "nobody")
 	)
@@ -67,27 +59,27 @@
 (dump (test-return-string 10))      /* prints nobody */
 
 (fun fib (x)
-	(if (< x 3)
-		(if (= x 0) 0 1)
-		(+ (fib (- x 1)) (fib (- x 2)))
+	(if (lt x 3)
+		(if (eq x 0) 0 1)
+		(add (fib (sub x 1)) (fib (sub x 2)))
 	)
 )
 
-(while (< c 10)
-	(set c (+ c 1))
+(while (lt c 10)
+	(set c (add c 1))
 )
 
 (set c 0)
-(let sum-a (while (< c 10)
-	(set c (+ c 1))
+(let sum-a (while (lt c 10)
+	(set c (add c 1))
 ))
 (dump sum-a) /* prints 10 */
 
 (set c 0)
 (let k 0)
-(let sum-b (while (< c 10)
-	(set c (+ c 1))
-	(set k (+ k c))
+(let sum-b (while (lt c 10)
+	(set c (add c 1))
+	(set k (add k c))
 ))
 (dump sum-b) /* prints 55 */
 
@@ -96,7 +88,7 @@
 
 (fun outer (x)
 	(fun inner (y)
-		(+ y x)
+		(add y x)
 	)
 
 	(inner 3)
@@ -104,25 +96,22 @@
 
 (dump (outer 45)) /* prints 48 */
 
-(fun ++ (x)
-	(+ x 1)
-)
-
-(dump (++ 45)) /* prints 46 */
+(dump (inc 45)) /* prints 46 */
+(dump (dec 45)) /* prints 44 */
 
 (let xxx (call (fun (x)
-		(+ x x)
+		(add x x)
 	)
 	(call (fun () 4))
 ))
 (dump xxx) /* prints 8 */
 
-(let bg (fun (x) (/ x 2)))
+(let bg (fun (x) (div x 2)))
 (dump bg) /* prints function: <lambda#1> */
 (dump (bg 42)) /* prints 21 */
 
 (fun pouet (l r)
-	(if (> l r) l r)
+	(if (gt l r) l r)
 )
 (dump (pouet 1 2)) /* prints 2 */
 (dump (pouet 2 1)) /* prints 2 */
@@ -145,4 +134,4 @@
 (dump (test-switch "test")) /* prints nobody */
 (dump (fun () 0))           /* prints function: <lambda#1> */
 (dump test-switch)          /* prints function: test-switch */
-(dump =)                    /* prints function: <native#1> */
+(dump eq)                    /* prints function: <native#1> */

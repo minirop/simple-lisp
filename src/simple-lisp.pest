@@ -1,7 +1,7 @@
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 COMMENT = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
-identifier = @{ (ASCII_ALPHA | "+" | "-" | "*" | "/" | "<" | ">" | "=")+ }
+identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHA | "-" | "/")* }
 integer = _{ ASCII_DIGIT+ }
 number = @{ "-"? ~ integer }
 float = @{ number ~ "." ~ integer }
