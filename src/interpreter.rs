@@ -40,7 +40,7 @@ pub struct Visitor {
     natives: HashMap<String, Box<dyn Fn(Vec<Node>) -> Node>>,
     classes: HashMap<String, Class>,
     return_value: Option<Node>,
-    path: String,
+    paths: Vec<String>,
     libs: Vec<libloading::Library>,
 }
 
@@ -63,20 +63,20 @@ impl Visitor {
             natives: natives,
             classes: HashMap::new(),
             return_value: None,
-            path: String::new(),
+            paths: vec![std::env::current_dir().unwrap().as_path().to_str().unwrap().to_string()],
             libs: vec![],
         }
     }
 
     pub fn interpret(&mut self, filename: &str) -> Node {
-        let cur_path = self.path.clone();
+        let cur_path = self.paths.last().unwrap().clone();
         let filename = if filename.starts_with("/") {
             PathBuf::from(&filename)
         } else {
             PathBuf::from(&format!("{}/{}", cur_path, filename))
         };
         let path = filename.parent().unwrap().to_str().unwrap().to_string();
-        self.path = path.clone();
+        self.paths.push(path);
 
         let filename = filename.to_str().unwrap().to_string();
         let filename = if filename.ends_with(".sl") {
@@ -97,6 +97,8 @@ impl Visitor {
         let ret = self.evaluate_block(ast);
         self.scopes.pop();
         self.return_value = None;
+
+        self.paths.pop();
 
         ret
     }
@@ -340,11 +342,11 @@ impl Visitor {
                     Node::String(s) => s,
                     _ => panic!("load only accept strings. Got {:?}", args[0]),
                 };
-                
 
-                if Path::new(&format!("{}.sl", filename)).exists() {
+                let path = self.paths.last().unwrap().clone();
+                if Path::new(&format!("{}/{}.sl", path, filename)).exists() {
                     self.interpret(filename)
-                } else if Path::new(&format!("{}.so", filename)).exists() {
+                } else if Path::new(&format!("{}/{}.so", path, filename)).exists() {
                     self.load_library(filename)
                 } else {
                     eprintln!("Could not load module {:?}", filename);
