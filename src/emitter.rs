@@ -118,7 +118,6 @@ impl Emitter {
             Self::write_string(&mut f, &string);
         }
 
-        f.write_u32::<LittleEndian>(0);
         f.write_u32::<LittleEndian>(self.classes.len() as u32);
         for (name, c) in &self.classes {
             Self::write_string(&mut f, &name);
@@ -135,7 +134,7 @@ impl Emitter {
             for fun in &c.functions {
                 Self::write_string(&mut f, &fun.name);
                 f.write_u8(fun.arity); // arity
-                f.write_u8(if fun.is_static { 1 } else { 0 }); // static
+                //f.write_u8(if fun.is_static { 1 } else { 0 }); // static
                 f.write_u8(0); // locals
                 f.write_u16::<LittleEndian>(fun.code.len() as u16);
                 f.write(&fun.code);
