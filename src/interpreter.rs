@@ -504,11 +504,15 @@ impl Visitor {
 
     fn load_library(&mut self, filename: &str) -> Node {
         unsafe {
-            let lib = libloading::Library::new(format!("{}.so", filename)).unwrap();
+            println!("load_library1: {}", filename);
+            let lib = libloading::Library::new(format!("{}/{}.so", self.paths.last().unwrap(), filename)).unwrap();
+            println!("load_library2: {}", filename);
             let func: libloading::Symbol<unsafe extern fn(&mut HashMap<String, Box<dyn Fn(Vec<Node>) -> Node>>) -> Node> = lib.get(b"module_init").unwrap();
-            println!("load_library: {}", filename);
+            println!("load_library3: {}", filename);
             let ret = func(&mut self.natives);
+            println!("load_library4: {}", filename);
             self.libs.push(lib);
+            println!("load_library5: {}", filename);
             ret
         }
     }

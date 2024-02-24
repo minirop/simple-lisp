@@ -10,6 +10,8 @@ mod interpreter;
 use interpreter::*;
 mod generator;
 use generator::*;
+mod emitter;
+use emitter::*;
 
 /// Compiles simple list .sl files
 #[derive(Parser, Debug)]
@@ -21,6 +23,10 @@ struct Args {
     /// Compile
     #[arg(short, long)]
     compile: bool,
+
+    /// Emit VM bytecode
+    #[arg(short, long)]
+    emit: bool,
 }
 
 fn main() -> std::io::Result<()> {
@@ -28,6 +34,8 @@ fn main() -> std::io::Result<()> {
 
     if args.compile {
         generate(&args.input);
+    } else if args.emit {
+        emit(&args.input);
     } else {
         let mut visitor = Visitor::new();
         let path = Path::new(&args.input).canonicalize().unwrap();
