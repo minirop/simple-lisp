@@ -77,6 +77,7 @@ impl Emitter {
                     }
                 },
                 Node::Function { name, params, body } => {
+                    let name_only = name.clone();
                     let args_ph = if params.len() > 0 { format!("_{}", ",_".repeat(params.len() - 1)) } else { "".to_string() };
                     let name = format!("{name}({args_ph})");
 
@@ -98,7 +99,41 @@ impl Emitter {
                     }
                     code.write_u8(OP_RETURN);
 
-                    let f = self.classes.get_mut("$self").unwrap().functions.last_mut().unwrap().code = code;
+                    self.classes.get_mut("$self").unwrap().functions.last_mut().unwrap().code = code;
+
+                    let count_required_args = params.iter().filter(|&p| p.default_value.is_some()).count();
+
+                    for i in count_required_args..(args_names.len() - 1) {
+                        let args_ph = if i > 0 { format!("_{}", ",_".repeat(i - 1)) } else { "".to_string() };
+                        let vname = format!("{name_only}({args_ph})");
+
+                        let mut args = vec![];
+                        for idx in 1..(i + 1) {
+                            args.push(Node::Identifier(args_names[idx].clone()));
+                        }
+
+                        for idx in i..params.len() {
+                            let Some(param) = params.get(idx) else {
+                                panic!("INVALID PARAM");
+                            };
+
+                            let Some(default) = &param.default_value else {
+                                panic!("EMPTY PARAM");
+                            };
+
+                            args.push(default.clone());
+                        }
+
+                        let mut code = self.parse_call(&name_only, &args, &args_names, &vec![]);
+                        code.write_u8(OP_RETURN);
+
+                        let f = Function {
+                            name: vname, arity: i as u8,
+                            code, is_static: true, args_names: args_names[0..(i + 1)].to_vec(),
+                        };
+
+                        self.classes.get_mut("$self").unwrap().functions.push(f);
+                    }
                 },
                 _ => panic!("{:?} not handled.", node),
             };
@@ -378,11 +413,14 @@ impl Emitter {
                 for fun in &self_class.functions {
                     if fun.name.starts_with(name) {
                         let occurence = fun.name.chars().fold(0, |acc, c| acc + if c == '_' { 1 } else { 0 } );
-                        is_static = true;
-                        bytes.write_u8(OP_LOAD_MODULE_VAR);
-                        bytes.write_u16::<LittleEndian>(self.str_index("$self"));
+                        if occurence == args.len() {
+                            is_static = true;
+                            bytes.write_u8(OP_LOAD_MODULE_VAR);
+                            bytes.write_u16::<LittleEndian>(self.str_index("$self"));
 
-                        args_names = fun.args_names.clone();
+                            args_names = fun.args_names.clone();
+                            break;
+                        }
                     }
                 }
 
