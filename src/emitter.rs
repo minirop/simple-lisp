@@ -22,6 +22,7 @@ pub fn emit(filename: &str) {
     let mut emitter = Emitter {
         strings: vec![],
         classes: HashMap::new(),
+        closure_id: 0,
     };
 
     emitter.parse_root(&nodes);
@@ -32,7 +33,6 @@ struct Function {
     name: String,
     arity: u8,
     code: Vec<u8>,
-    is_static: bool,
     args_names: Vec<String>,
 }
 
@@ -53,6 +53,7 @@ struct Class {
 struct Emitter {
     strings: Vec<String>,
     classes: HashMap<String, Class>,
+    closure_id: u32,
 }
 
 impl Emitter {
@@ -81,21 +82,25 @@ impl Emitter {
                     let args_ph = if params.len() > 0 { format!("_{}", ",_".repeat(params.len() - 1)) } else { "".to_string() };
                     let name = format!("{name}({args_ph})");
 
-                    let mut args_names = vec!["this".to_string()];
+                    let mut args_names = vec![];
                     for p in params {
                         args_names.push(p.name.clone());
                     }
 
                     let mut f = Function {
                         name: name.clone(), arity: params.len() as u8,
-                        code: vec![], is_static: true, args_names: args_names.clone(),
+                        code: vec![], args_names: args_names.clone(),
                     };
 
                     self.classes.get_mut("$self").unwrap().functions.push(f);
 
                     let mut code = vec![];
-                    for o in body {
+                    let body_size = body.len();
+                    for (i, o) in body.iter().enumerate() {
                         code.extend(self.parse_node(o, &args_names, &vec![]));
+                        if i + 1 < body_size {
+                            code.write_u8(OP_POP);
+                        }
                     }
                     code.write_u8(OP_RETURN);
 
@@ -129,7 +134,7 @@ impl Emitter {
 
                         let f = Function {
                             name: vname, arity: i as u8,
-                            code, is_static: true, args_names: args_names[0..(i + 1)].to_vec(),
+                            code, args_names: args_names[0..(i + 1)].to_vec(),
                         };
 
                         self.classes.get_mut("$self").unwrap().functions.push(f);
@@ -138,10 +143,11 @@ impl Emitter {
                 _ => panic!("{:?} not handled.", node),
             };
         }
+        main_bytes.write_u8(OP_NULL);
         main_bytes.write_u8(OP_RETURN);
         self.classes.get_mut("$self").unwrap().functions.push(Function {
             name: "main".into(), arity: 0, code: main_bytes,
-            is_static: true, args_names: vec![],
+            args_names: vec![],
         });
 
         let mut f = File::create("test.bin").unwrap();
@@ -169,7 +175,6 @@ impl Emitter {
             for fun in &c.functions {
                 Self::write_string(&mut f, &fun.name);
                 f.write_u8(fun.arity); // arity
-                //f.write_u8(if fun.is_static { 1 } else { 0 }); // static
                 f.write_u8(0); // locals
                 f.write_u16::<LittleEndian>(fun.code.len() as u16);
                 f.write(&fun.code);
@@ -252,12 +257,12 @@ impl Emitter {
                 bytes.extend(self.parse_node(&args[0], &args_names, &fields_names));
                 bytes.write_u8(OP_JUMP_IF);
                 let pos1 = bytes.len();
-                bytes.write_i8(0);
+                bytes.write_u8(0);
                 bytes.extend(self.parse_node(&args[2], &args_names, &fields_names));
                 bytes.write_u8(OP_JUMP);
 
                 let pos2 = bytes.len();
-                bytes.write_i8(3);
+                bytes.write_u8(0);
 
                 let pos1end = bytes.len();
                 bytes[pos1] = self.count_opcodes(&bytes[(pos1 + 1)..pos1end]);
@@ -297,7 +302,7 @@ impl Emitter {
                                 _ => panic!("'let' expects an identifier. Got {:?}", args[0]),
                             };
 
-                            let default = self.parse_node(&args[1], &vec!["this".to_string()], &fields_names);
+                            let default = self.parse_node(&args[1], &vec![], &fields_names);
                             fields.push(Field {
                                 name: field.clone(), default,
                             });
@@ -313,7 +318,7 @@ impl Emitter {
                     match elem {
                         Node::Call { .. } => {},
                         Node::Function { name, params, body } => {
-                            let mut args_names = vec!["this".to_string()];
+                            let mut args_names = vec![];
                             for a in params {
                                 args_names.push(a.name.clone());
                             }
@@ -343,7 +348,6 @@ impl Emitter {
                             functions.push(Function {
                                 name: name.clone(),
                                 arity: params.len() as u8,
-                                is_static: false,
                                 args_names: args_names,
                                 code: code,
                             });
@@ -359,6 +363,7 @@ impl Emitter {
                 });
             },
             "let" => {
+                println!("{name} {:?}", args);
                 let name = match &args[0] {
                     Node::Identifier(id) => id,
                     _ => panic!("'let' expects an identifier. Got {:?}", args[0]),
@@ -372,7 +377,7 @@ impl Emitter {
             "set" => {
                 let name = match &args[0] {
                     Node::Identifier(id) => id,
-                    _ => panic!("'let' expects an identifier. Got {:?}", args[0]),
+                    _ => panic!("'set' expects an identifier. Got {:?}", args[0]),
                 };
 
                 self.str_push(&name);
@@ -403,10 +408,99 @@ impl Emitter {
                 bytes.write_u8(OP_ALLOCATE_VAR);
                 bytes.write_u16::<LittleEndian>(self.str_index(&name));
             },
+            "fiber" => {
+                self.str_push("Fiber");
+                self.str_push("new(_)");
+
+                let (name, params, body) = match &args[0] {
+                    Node::Function { name, params, body } => (name, params, body),
+                    _ => panic!("'fiber' expects an function. Got {:?}", args[0]),
+                };
+
+                let mut name = name.clone();
+                if name.len() == 0 {
+                    name = format!("closure#{}", self.closure_id);
+                    self.str_push(&name);
+                    self.closure_id += 1;
+                } else {
+                    panic!("Only unnamed functions can be passed to 'fiber'. Got {name}");
+                }
+
+                let mut args_names = vec![];
+                for p in params {
+                    args_names.push(p.name.clone());
+                }
+
+                let mut code = vec![];
+                let body_size = body.len();
+                for (i, o) in body.iter().enumerate() {
+                    code.extend(self.parse_node(o, &args_names, &vec![]));
+                    if i + 1 < body_size {
+                        code.write_u8(OP_POP);
+                    }
+                }
+                code.write_u8(OP_RETURN);
+
+                self.classes.get_mut("$self").unwrap().functions.push(Function {
+                        name: name.clone(), arity: params.len() as u8,
+                        code, args_names: args_names,
+                });
+
+                bytes.write_u8(OP_LOAD_MODULE_VAR);
+                bytes.write_u16::<LittleEndian>(self.str_index("Fiber"));
+
+                bytes.write_u8(OP_LOAD_MODULE_VAR);
+                bytes.write_u16::<LittleEndian>(self.str_index("$self"));
+                bytes.write_u8(OP_CLOSURE);
+                bytes.write_u16::<LittleEndian>(self.str_index(&name));
+
+                bytes.write_u8(OP_CALL);
+                bytes.write_u16::<LittleEndian>(self.str_index("new(_)"));
+                bytes.write_u8(1);
+            },
+            "yield" => {
+                self.str_push("Fiber");
+                self.str_push("yield(_)");
+
+                bytes.write_u8(OP_LOAD_MODULE_VAR);
+                bytes.write_u16::<LittleEndian>(self.str_index("Fiber"));
+
+                if args.len() == 1 {
+                    let name = match &args[0] {
+                        Node::Identifier(name) => {
+                            if args_names.contains(name) {
+                                bytes.write_u8(OP_STORE_LOCAL_VAR);
+                                let index = args_names.iter().position(|r| r == name).unwrap();
+                                bytes.write_u16::<LittleEndian>(index as u16);
+                            } else if fields_names.contains(name) {
+                                bytes.write_u8(OP_STORE_FIELD_THIS);
+                                let index = self.str_index(&name);
+                                bytes.write_u16::<LittleEndian>(index as u16);
+                            } else {
+                                bytes.write_u8(OP_STORE_MODULE_VAR);
+                                self.str_push(name);
+                                let index = self.str_index(&name);
+                                bytes.write_u16::<LittleEndian>(index as u16);
+                            }
+                        },
+                        _ => {
+                            bytes.extend(self.parse_constant(&args[0]));
+                        },
+                    };
+                } else {
+                    bytes.write_u8(OP_NULL);
+                }
+
+                bytes.write_u8(OP_CALL);
+                bytes.write_u16::<LittleEndian>(self.str_index("yield(_)"));
+                bytes.write_u8(1);
+            },
+            "return" => {
+                bytes.write_u8(OP_RETURN);
+            },
             _ => {
                 let getters = vec!["count"];
 
-                let mut is_static = false;
                 let mut args_names = args_names.clone();
 
                 let self_class = self.classes.get("$self").unwrap();
@@ -414,7 +508,6 @@ impl Emitter {
                     if fun.name.starts_with(name) {
                         let occurence = fun.name.chars().fold(0, |acc, c| acc + if c == '_' { 1 } else { 0 } );
                         if occurence == args.len() {
-                            is_static = true;
                             bytes.write_u8(OP_LOAD_MODULE_VAR);
                             bytes.write_u16::<LittleEndian>(self.str_index("$self"));
 
@@ -424,10 +517,12 @@ impl Emitter {
                     }
                 }
 
-                let args_count = args.len() - if is_static { 0 } else { 1 };
+                println!("{name} / {:?}", args);
+                let args_count = args.len() - 1;
 
                 let args_ph = if args_count > 0 { format!("_{}", ",_".repeat(args_count - 1)) } else { "".to_string() };
-                let name = if args_count == 1 && getters.contains(&name) { format!("{name}") } else { format!("{name}({args_ph})") };
+                let name = if args_count == 0 && getters.contains(&name) { format!("{name}") } else { format!("{name}({args_ph})") };
+                println!("NAME: {name} / {args_count} / {:?}", args_names);
                 self.str_push(&name);
 
                 for a in args {
@@ -436,7 +531,7 @@ impl Emitter {
 
                 bytes.write_u8(OP_CALL);
                 bytes.write_u16::<LittleEndian>(self.str_index(&name));
-                bytes.write_u8((args.len() - if is_static { 0 } else { 1 }) as u8);
+                bytes.write_u8(args_count as u8);
             },
         };
 
@@ -490,7 +585,7 @@ impl Emitter {
                     _ => panic!("{:?}", buf[i+1]),
                 },
                 OP_LOAD_MODULE_VAR | OP_LOAD_LOCAL_VAR => 2,
-                OP_JUMP | OP_JUMP_IF => 1,
+                OP_LOOP | OP_JUMP | OP_JUMP_IF => 1,
                 OP_CALL => 3,
                 OP_ADD | OP_SUB | OP_MUL | OP_DIV | OP_EQUAL | OP_LOWER_THAN | OP_GREATER_THAN
                 | OP_NEGATE | OP_RETURN => 0,
@@ -518,7 +613,7 @@ impl Emitter {
                 bytes.write_u8(VAL_INTEGER);
                 bytes.write_i32::<LittleEndian>(*i);
             },
-            _ => panic!("{:?}", node),
+            _ => panic!("parse_constant: {:?}", node),
         };        
 
         bytes
@@ -552,12 +647,12 @@ const OP_NOT: u8 = 11;
 const OP_EQUAL: u8 = 12;
 const OP_LOWER_THAN: u8 = 13;
 const OP_GREATER_THAN: u8 = 14;
-const OP_PRINT: u8 = 15;
+const OP_CLOSURE: u8 = 15;
 const OP_POP: u8 = 16;
 const OP_LOAD_MODULE_VAR: u8 = 17;
 const OP_STORE_MODULE_VAR: u8 = 18;
 const OP_CALL: u8 = 19;
-const OP_CALL_STATIC: u8 = 20;
+const OP_LOOP: u8 = 20;
 const OP_LOAD_LOCAL_VAR: u8 = 21;
 const OP_STORE_LOCAL_VAR: u8 = 22;
 const OP_ALLOCATE_VAR: u8 = 23;
