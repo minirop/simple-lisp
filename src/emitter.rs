@@ -408,6 +408,24 @@ impl Emitter {
                 bytes.write_u8(OP_ALLOCATE_VAR);
                 bytes.write_u16::<LittleEndian>(self.str_index(&name));
             },
+            "abort" => {
+                let msg = match &args[0] {
+                    Node::String(s) => s,
+                    _ => panic!("'abort' expects a string. Got {:?}", args[0]),
+                };
+
+                self.str_push("Fiber");
+                self.str_push("abort(_)");
+
+                bytes.write_u8(OP_LOAD_MODULE_VAR);
+                bytes.write_u16::<LittleEndian>(self.str_index("Fiber"));
+
+                bytes.extend(self.parse_constant(&Node::String(msg.clone())));
+
+                bytes.write_u8(OP_CALL);
+                bytes.write_u16::<LittleEndian>(self.str_index("abort(_)"));
+                bytes.write_u8(1);
+            },
             "fiber" => {
                 self.str_push("Fiber");
                 self.str_push("new(_)");
@@ -499,7 +517,7 @@ impl Emitter {
                 bytes.write_u8(OP_RETURN);
             },
             _ => {
-                let getters = vec!["count"];
+                let getters = vec!["count", "isdone"];
 
                 let mut args_names = args_names.clone();
 
@@ -523,6 +541,11 @@ impl Emitter {
                 let args_ph = if args_count > 0 { format!("_{}", ",_".repeat(args_count - 1)) } else { "".to_string() };
                 let name = if args_count == 0 && getters.contains(&name) { format!("{name}") } else { format!("{name}({args_ph})") };
                 println!("NAME: {name} / {args_count} / {:?}", args_names);
+                let name = if name == "isdone" {
+                    "isDone".to_string()
+                } else {
+                    name
+                };
                 self.str_push(&name);
 
                 for a in args {
