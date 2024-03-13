@@ -9,6 +9,6 @@ $ simple-lisp file.sl -c # compiler (converts it to C++ then call g++)
 $ simple-lisp file.sl -e # bytecode (converts it to bytecode for the RockVM¹)
 ```
 
-There are differences in support from each backend. So not all example will run the same on each (or might even be unsupported).
+There are differences in support from each backend. So not all examples will run the same on each (or might even be unsupported).
 
 ¹: [RockVM](https://github.com/minirop/rockvm)

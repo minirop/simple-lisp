@@ -805,14 +805,13 @@ const OP_LOAD_FIELD_THIS: u8 = 24;
 const OP_STORE_FIELD_THIS: u8 = 25;
 const OP_JUMP_IF: u8 = 26;
 const OP_JUMP: u8 = 27;
-const OP_DUP: u8 = 28;
+//const OP_DUP: u8 = 28;
 const OP_LOOP_IF: u8 = 29;
 const OP_IMPORT_MODULE: u8 = 30;
-const OP_DUMP_STACK: u8 = 255;
+//const OP_DUMP_STACK: u8 = 255;
 
 const VAL_NULL: u8 = 1;
 const VAL_BOOL: u8 = 2;
 const VAL_INTEGER: u8 = 3;
 const VAL_FLOAT: u8 = 4;
 const VAL_STRING: u8 = 5;
-const VAL_CLASS: u8 = 6;
