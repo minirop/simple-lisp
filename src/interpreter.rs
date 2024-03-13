@@ -476,6 +476,9 @@ impl Visitor {
 
                 ret
             },
+            "fiber" => {
+                panic!("UNKNOWN FIBER!!!");
+            },
             _ => {
                 if self.scopes.last_mut().unwrap().functions.contains_key(name) {
                     self.execute_function(name, args)
@@ -1088,13 +1091,13 @@ fn load_type_module(natives: &mut HashMap<String, Box<dyn Fn(Vec<Node>) -> Node>
     natives.insert("is-function".to_string(), Box::new(is_function));
 }
 
-fn println(args: Vec<Node>) -> Node {
-    print(args);
+fn print(args: Vec<Node>) -> Node {
+    write(args);
     println!("");
     Node::Null
 }
 
-fn print(args: Vec<Node>) -> Node {
+fn write(args: Vec<Node>) -> Node {
     for a in &args {
         match a {
             Node::Integer(i) => print!("{i}"),
@@ -1151,7 +1154,7 @@ fn read_float(_args: Vec<Node>) -> Node {
 
 fn load_io_module(natives: &mut HashMap<String, Box<dyn Fn(Vec<Node>) -> Node>>) {
     natives.insert("print".to_string(), Box::new(print));
-    natives.insert("println".to_string(), Box::new(println));
+    natives.insert("write".to_string(), Box::new(write));
     natives.insert("read".to_string(), Box::new(read));
     natives.insert("read-int".to_string(), Box::new(read_int));
     natives.insert("read-float".to_string(), Box::new(read_float));
