@@ -103,7 +103,7 @@ impl Emitter {
 
                     self.classes.get_mut("$self").unwrap().functions.last_mut().unwrap().code = code;
 
-                    let count_required_args = params.iter().filter(|&p| p.default_value.is_some()).count();
+                    let count_required_args = params.iter().filter(|&p| p.default_value.is_none()).count();
 
                     for i in count_required_args..(args_names.len() - 1) {
                         let args_ph = if i > 0 { format!("_{}", ",_".repeat(i - 1)) } else { "".to_string() };
@@ -581,6 +581,7 @@ impl Emitter {
                 let getters = vec!["count", "isdone"];
 
                 let mut args_names = args_names.clone();
+                let mut minus = 1;
 
                 let self_class = self.classes.get("$self").unwrap();
                 for fun in &self_class.functions {
@@ -591,12 +592,13 @@ impl Emitter {
                             bytes.write_u16::<LittleEndian>(self.str_index("$self")).unwrap();
 
                             args_names = fun.args_names.clone();
+                            minus = 0;
                             break;
                         }
                     }
                 }
 
-                let args_count = args.len() - 1;
+                let args_count = args.len() - minus;
 
                 let args_ph = if args_count > 0 { format!("_{}", ",_".repeat(args_count - 1)) } else { "".to_string() };
                 let name = if args_count == 0 && getters.contains(&name) { format!("{name}") } else { format!("{name}({args_ph})") };
