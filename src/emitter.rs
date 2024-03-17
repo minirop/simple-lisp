@@ -220,7 +220,7 @@ impl Emitter {
                     &_ => panic!("???"),
                 }).unwrap();
             },
-            "lt" | "gt" | "eq" => {
+            "lt" | "gt" | "eq" | "neq" => {
                 for a in args {
                     bytes.extend(self.parse_node(&a, args_names, fields_names));
                 }
@@ -229,8 +229,13 @@ impl Emitter {
                     "lt" => OP_LOWER_THAN,
                     "gt" => OP_GREATER_THAN,
                     "eq" => OP_EQUAL,
+                    "neq" => OP_EQUAL,
                     &_ => panic!("???"),
                 }).unwrap();
+
+                if name == "neq" {
+                    bytes.write_u8(OP_NOT).unwrap();
+                }
             },
             "inc" => {
                 let (write_op, index) = match &args[0] {
@@ -475,9 +480,30 @@ impl Emitter {
                     _ => panic!("'new' expects an identifier. Got {:?}", args[0]),
                 };
 
-                self.str_push(name);
-                bytes.write_u8(OP_ALLOCATE_VAR).unwrap();
-                bytes.write_u16::<LittleEndian>(self.str_index(name)).unwrap();
+                if self.classes.contains_key(name) {
+                    self.str_push(name);
+                    bytes.write_u8(OP_ALLOCATE_VAR).unwrap();
+                    bytes.write_u16::<LittleEndian>(self.str_index(name)).unwrap();
+                } else {
+                    let mut c = name.chars();
+                    let var = match c.next() {
+                        None => String::new(),
+                        Some(first) => first.to_uppercase().to_string(),
+                    };
+                    let name = &format!("{}{}", var, c.as_str());
+                    let new = &format!("new({})", vec!["_"; args.len() - 1].join(","));
+                    self.str_push(new);
+                    self.str_push(name);
+
+                    bytes.write_u8(OP_LOAD_MODULE_VAR).unwrap();
+                    bytes.write_u16::<LittleEndian>(self.str_index(name)).unwrap();
+                    for a in args.iter().skip(1) {
+                        bytes.extend(self.parse_node(&a, args_names, fields_names));
+                    }
+                    bytes.write_u8(OP_CALL).unwrap();
+                    bytes.write_u16::<LittleEndian>(self.str_index(new)).unwrap();
+                    bytes.write_u8((args.len() - 1) as u8).unwrap();
+                }
             },
             "abort" => {
                 let msg = match &args[0] {
