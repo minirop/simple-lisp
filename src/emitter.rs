@@ -506,18 +506,13 @@ impl Emitter {
                 }
             },
             "abort" => {
-                let msg = match &args[0] {
-                    Node::String(s) => s,
-                    _ => panic!("'abort' expects a string. Got {:?}", args[0]),
-                };
-
                 self.str_push("Fiber");
                 self.str_push("abort(_)");
 
                 bytes.write_u8(OP_LOAD_MODULE_VAR).unwrap();
                 bytes.write_u16::<LittleEndian>(self.str_index("Fiber")).unwrap();
 
-                bytes.extend(self.parse_constant(&Node::String(msg.clone())));
+                bytes.extend(self.load_variable(&args[0], args_names, fields_names));
 
                 bytes.write_u8(OP_CALL).unwrap();
                 bytes.write_u16::<LittleEndian>(self.str_index("abort(_)")).unwrap();
