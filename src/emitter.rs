@@ -599,7 +599,7 @@ impl Emitter {
                 bytes.write_u16::<LittleEndian>(index as u16).unwrap();
             },
             _ => {
-                let getters = vec!["count", "isdone"];
+                let getters = vec!["count", "isdone", "type", "name", "supertype"];
 
                 let mut args_names = args_names.clone();
                 let mut minus = 1;
