@@ -53,9 +53,24 @@ struct Emitter {
     closure_id: u32,
 }
 
+#[derive(Debug)]
+struct FunctionDecl {
+    name: String,
+    args: Vec<String>,
+}
+
+#[derive(Debug)]
+struct Context {
+    classname: Option<String>,
+    fields: Vec<String>,
+    function: FunctionDecl,
+}
+
+
+const GETTERS: [&str; 5] = ["count", "isdone", "type", "name", "supertype"];
+
 impl Emitter {
     fn parse_root(&mut self, nodes: &Vec<Node>) {
-
         self.str_push("$self");
 
         self.classes.insert("$self".into(), Class {
@@ -68,7 +83,15 @@ impl Emitter {
         for node in nodes {
             match node {
                 Node::Call { name, args } => {
-                    main_bytes.extend(self.parse_call(name, args, &vec![], &vec![]));
+                    let mut context = Context {
+                        classname: None,
+                        function: FunctionDecl {
+                            name: name.clone(),
+                            args: vec![],
+                        },
+                        fields: vec![],
+                    };
+                    main_bytes.extend(self.parse_call(name, args, &mut context));
 
                     if name != "class" {
                         main_bytes.push(OP_POP);
@@ -79,9 +102,19 @@ impl Emitter {
                     let args_ph = if params.len() > 0 { format!("_{}", ",_".repeat(params.len() - 1)) } else { "".to_string() };
                     let name = format!("{name}({args_ph})");
 
+                    let mut context = Context {
+                        classname: None,
+                        function: FunctionDecl {
+                            name: name.clone(),
+                            args: vec![],
+                        },
+                        fields: vec![],
+                    };
+
                     let mut args_names = vec!["this".to_string()];
                     for p in params {
                         args_names.push(p.name.clone());
+                        context.function.args.push(p.name.clone());
                     }
 
                     let f = Function {
@@ -94,7 +127,7 @@ impl Emitter {
                     let mut code = vec![];
                     let body_size = body.len();
                     for (i, o) in body.iter().enumerate() {
-                        code.extend(self.parse_node(o, &args_names, &vec![]));
+                        code.extend(self.parse_node(o, &mut context));
                         if i + 1 < body_size {
                             code.write_u8(OP_POP).unwrap();
                         }
@@ -126,7 +159,7 @@ impl Emitter {
                             args.push(default.clone());
                         }
 
-                        let mut code = self.parse_call(&name_only, &args, &args_names, &vec![]);
+                        let mut code = self.parse_call(&name_only, &args, &mut context);
                         code.write_u8(OP_RETURN).unwrap();
 
                         let f = Function {
@@ -184,11 +217,11 @@ impl Emitter {
         f.write(string.as_bytes()).unwrap();
     }
 
-    fn parse_call(&mut self, name: &str, args: &Vec<Node>, args_names: &Vec<String>, fields_names: &Vec<String>) -> Vec<u8> {
+    fn parse_call(&mut self, name: &str, args: &Vec<Node>, context: &mut Context) -> Vec<u8> {
         let mut bytes = vec![];
 
         match name {
-            "print" => {
+            "print" | "write" => {
                 let args_count = args.len();
                 let args_ph = if args_count > 0 { format!("_{}", ",_".repeat(args_count - 1)) } else { "".to_string() };
                 let name = format!("{name}({args_ph})");
@@ -200,7 +233,7 @@ impl Emitter {
                 bytes.write_u16::<LittleEndian>(self.str_index("System")).unwrap();
 
                 for a in args {
-                    bytes.extend(self.parse_node(&a, args_names, fields_names));
+                    bytes.extend(self.parse_node(&a, context));
                 }
 
                 bytes.write_u8(OP_CALL).unwrap();
@@ -209,7 +242,7 @@ impl Emitter {
             },
             "add" | "sub" | "mul" | "div" => {
                 for a in args {
-                    bytes.extend(self.parse_node(&a, args_names, fields_names));
+                    bytes.extend(self.parse_node(&a, context));
                 }
 
                 bytes.write_u8(match name {
@@ -222,7 +255,7 @@ impl Emitter {
             },
             "lt" | "gt" | "eq" | "neq" => {
                 for a in args {
-                    bytes.extend(self.parse_node(&a, args_names, fields_names));
+                    bytes.extend(self.parse_node(&a, context));
                 }
 
                 bytes.write_u8(match name {
@@ -240,12 +273,12 @@ impl Emitter {
             "inc" => {
                 let (write_op, index) = match &args[0] {
                     Node::Identifier(name) => {
-                        if args_names.contains(name) {
+                        if context.function.args.contains(name) {
                             bytes.write_u8(OP_LOAD_MODULE_VAR).unwrap();
-                            let index = args_names.iter().position(|r| r == name).unwrap();
+                            let index = context.function.args.iter().position(|r| r == name).unwrap();
                             bytes.write_u16::<LittleEndian>(index as u16).unwrap();
                             (OP_STORE_LOCAL_VAR, index as u16)
-                        } else if fields_names.contains(name) {
+                        } else if context.fields.contains(name) {
                             bytes.write_u8(OP_LOAD_FIELD_THIS).unwrap();
                             let index = self.str_index(name);
                             bytes.write_u16::<LittleEndian>(index).unwrap();
@@ -280,7 +313,7 @@ impl Emitter {
                 bytes.write_u8(0).unwrap();
 
                 for a in args {
-                    bytes.extend(self.parse_node(&a, args_names, fields_names));
+                    bytes.extend(self.parse_node(&a, context));
                     bytes.write_u8(OP_CALL).unwrap();
                     bytes.write_u16::<LittleEndian>(self.str_index("add(_)")).unwrap();
                     bytes.write_u8(1).unwrap();
@@ -290,14 +323,14 @@ impl Emitter {
                 self.str_push("[_]");
                 self.str_push("[_]=(_)");
 
-                bytes.extend(self.load_variable(&args[0], args_names, fields_names));
-                bytes.extend(self.parse_node(&args[1], args_names, fields_names));
+                bytes.extend(self.load_variable(&args[0], context));
+                bytes.extend(self.parse_node(&args[1], context));
                 if args.len() == 2 {
                     bytes.write_u8(OP_CALL).unwrap();
                     bytes.write_u16::<LittleEndian>(self.str_index("[_]")).unwrap();
                     bytes.write_u8(1).unwrap();
                 } else if args.len() == 3 {
-                    bytes.extend(self.parse_node(&args[2], args_names, fields_names));
+                    bytes.extend(self.parse_node(&args[2], context));
                     bytes.write_u8(OP_CALL).unwrap();
                     bytes.write_u16::<LittleEndian>(self.str_index("[_]=(_)")).unwrap();
                     bytes.write_u8(2).unwrap();
@@ -306,11 +339,11 @@ impl Emitter {
                 }
             },
             "if" => {
-                bytes.extend(self.parse_node(&args[0], args_names, fields_names));
+                bytes.extend(self.parse_node(&args[0], context));
                 bytes.write_u8(OP_JUMP_IF).unwrap();
                 let pos1 = bytes.len();
                 bytes.write_u8(0).unwrap();
-                bytes.extend(self.parse_node(&args[2], args_names, fields_names));
+                bytes.extend(self.parse_node(&args[2], context));
                 bytes.write_u8(OP_JUMP).unwrap();
 
                 let pos2 = bytes.len();
@@ -319,7 +352,7 @@ impl Emitter {
                 let pos1end = bytes.len();
                 bytes[pos1] = self.count_opcodes(&bytes[(pos1 + 1)..pos1end]);
 
-                bytes.extend(self.parse_node(&args[1], args_names, fields_names));
+                bytes.extend(self.parse_node(&args[1], context));
 
                 let pos2end = bytes.len();
                 bytes[pos2] = self.count_opcodes(&bytes[(pos2 + 1)..pos2end]);
@@ -327,16 +360,16 @@ impl Emitter {
             "while" => {
                 let loop1 = bytes.len();
 
-                bytes.extend(self.parse_node(&args[0], args_names, fields_names));
+                bytes.extend(self.parse_node(&args[0], context));
                 bytes.write_u8(OP_NOT).unwrap();
                 bytes.write_u8(OP_JUMP_IF).unwrap();
                 let jmp1 = bytes.len();
                 bytes.write_u8(0).unwrap();
 
-                bytes.extend(self.parse_node(&args[1], args_names, fields_names));
+                bytes.extend(self.parse_node(&args[1], context));
 
                 for i in 2..args.len() {
-                    bytes.extend(self.parse_node(&args[i], args_names, fields_names));
+                    bytes.extend(self.parse_node(&args[i], context));
                     bytes.write_u8(OP_POP).unwrap();
                 }
 
@@ -350,7 +383,7 @@ impl Emitter {
                 bytes.write_u8(OP_NULL).unwrap();
             },
             "class" => {
-                let name = match &args[0] {
+                let classname = match &args[0] {
                     Node::Identifier(id) => id,
                     _ => panic!("'class' only accept identifiers. Got {:?}", args[0]),
                 };
@@ -363,6 +396,10 @@ impl Emitter {
                         skipped += 1;
                     }
                 }
+
+                self.classes.insert(classname.into(), Class {
+                    parent: parent.clone(), fields: vec![], functions: vec![],
+                });
 
                 let mut fields: Vec<Field> = vec![];
                 let mut functions: Vec<Function> = vec![];
@@ -379,7 +416,7 @@ impl Emitter {
                                 _ => panic!("'let' expects an identifier. Got {:?}", args[0]),
                             };
 
-                            let default = self.parse_node(&args[1], &vec![], fields_names);
+                            let default = self.parse_node(&args[1], context);
                             fields.push(Field {
                                 name: field.clone(), default,
                             });
@@ -395,27 +432,34 @@ impl Emitter {
                     match elem {
                         Node::Call { .. } => {},
                         Node::Function { name, params, body } => {
-                            let mut args_names = vec!["this".to_string()];
+                            let mut context = Context {
+                                classname: Some(classname.clone()),
+                                function: FunctionDecl {
+                                    name: name.clone(),
+                                    args: vec!["this".into()],
+                                },
+                                fields: vec![],
+                            };
+
                             for a in params {
-                                args_names.push(a.name.clone());
+                                context.function.args.push(a.name.clone());
                             }
 
-                            let mut fields_names = vec![];
                             for field in &fields {
-                                fields_names.push(field.name.clone());
+                                context.fields.push(field.name.clone());
                             }
 
                             let mut parent_ptr = parent.clone();
                             while let Some(parent_class) = self.classes.get(&parent_ptr) {
                                 for field in &parent_class.fields {
-                                    fields_names.push(field.name.clone());
+                                    context.fields.push(field.name.clone());
                                 }
                                 parent_ptr = parent_class.parent.clone();
                             }
 
                             let mut code = vec![];
                             for o in body {
-                                code.extend(self.parse_node(o, &args_names, &fields_names));
+                                code.extend(self.parse_node(o, &mut context));
                             }
                             code.write_u8(OP_RETURN).unwrap();
 
@@ -425,7 +469,7 @@ impl Emitter {
                             functions.push(Function {
                                 name: name.clone(),
                                 arity: params.len() as u8,
-                                args_names: args_names,
+                                args_names: context.function.args,
                                 code: code,
                             });
                         },
@@ -435,9 +479,38 @@ impl Emitter {
                     };
                 }
 
-                self.classes.insert(name.into(), Class {
-                    parent, fields, functions,
-                });
+                let class_obj = self.classes.get_mut(classname.into()).unwrap();
+                class_obj.fields = fields;
+                class_obj.functions = functions;
+            },
+            "super" => {
+                let _parent_class = if let Some(cname) = &context.classname {
+                    self.classes.get(cname).unwrap().parent.clone()
+                } else {
+                    panic!("Can't call super outside of a method.");
+                };
+
+                let args_count = context.function.args.len() - 1;
+                let name = context.function.name.clone();
+
+                let args_ph = if args_count > 0 { format!("_{}", ",_".repeat(args_count - 1)) } else { "".to_string() };
+                let name = if args_count == 0 && GETTERS.contains(&name.as_str()) { format!("{name}") } else { format!("{name}({args_ph})") };
+                let name = if name == "isdone" {
+                    "isDone".to_string()
+                } else if name == "not()" {
+                    "!".to_string()
+                } else {
+                    name
+                };
+                self.str_push(&name);
+
+                for i in 0..context.function.args.len() {
+                    bytes.write_u8(OP_LOAD_LOCAL_VAR).unwrap();
+                    bytes.write_u16::<LittleEndian>(i as u16).unwrap();
+                }
+                bytes.write_u8(OP_SUPER).unwrap();
+                bytes.write_u16::<LittleEndian>(self.str_index(&name)).unwrap();
+                bytes.write_u8(args_count as u8).unwrap();
             },
             "let" => {
                 let name = match &args[0] {
@@ -446,7 +519,7 @@ impl Emitter {
                 };
 
                 self.str_push(&name);
-                bytes.extend(self.parse_node(&args[1], args_names, fields_names));
+                bytes.extend(self.parse_node(&args[1], context));
                 bytes.write_u8(OP_STORE_MODULE_VAR).unwrap();
                 bytes.write_u16::<LittleEndian>(self.str_index(name)).unwrap();
             },
@@ -457,13 +530,13 @@ impl Emitter {
                 };
 
                 self.str_push(&name);
-                bytes.extend(self.parse_node(&args[1], args_names, fields_names));
+                bytes.extend(self.parse_node(&args[1], context));
 
-                if args_names.contains(name) {
+                if context.function.args.contains(name) {
                     bytes.write_u8(OP_STORE_LOCAL_VAR).unwrap();
-                    let index = args_names.iter().position(|r| r == name).unwrap();
+                    let index = context.function.args.iter().position(|r| r == name).unwrap();
                     bytes.write_u16::<LittleEndian>(index as u16).unwrap();
-                } else if fields_names.contains(name) {
+                } else if context.fields.contains(name) {
                     bytes.write_u8(OP_STORE_FIELD_THIS).unwrap();
                     let index = self.str_index(name);
                     bytes.write_u16::<LittleEndian>(index).unwrap();
@@ -498,7 +571,7 @@ impl Emitter {
                     bytes.write_u8(OP_LOAD_MODULE_VAR).unwrap();
                     bytes.write_u16::<LittleEndian>(self.str_index(name)).unwrap();
                     for a in args.iter().skip(1) {
-                        bytes.extend(self.parse_node(&a, args_names, fields_names));
+                        bytes.extend(self.parse_node(&a, context));
                     }
                     bytes.write_u8(OP_CALL).unwrap();
                     bytes.write_u16::<LittleEndian>(self.str_index(new)).unwrap();
@@ -512,7 +585,7 @@ impl Emitter {
                 bytes.write_u8(OP_LOAD_MODULE_VAR).unwrap();
                 bytes.write_u16::<LittleEndian>(self.str_index("Fiber")).unwrap();
 
-                bytes.extend(self.load_variable(&args[0], args_names, fields_names));
+                bytes.extend(self.load_variable(&args[0], context));
 
                 bytes.write_u8(OP_CALL).unwrap();
                 bytes.write_u16::<LittleEndian>(self.str_index("abort(_)")).unwrap();
@@ -544,7 +617,7 @@ impl Emitter {
                 let mut code = vec![];
                 let body_size = body.len();
                 for (i, o) in body.iter().enumerate() {
-                    code.extend(self.parse_node(o, &args_names, &vec![]));
+                    code.extend(self.parse_node(o, context));
                     if i + 1 < body_size {
                         code.write_u8(OP_POP).unwrap();
                     }
@@ -576,7 +649,7 @@ impl Emitter {
                 bytes.write_u16::<LittleEndian>(self.str_index("Fiber")).unwrap();
 
                 if args.len() == 1 {
-                    bytes.extend(self.load_variable(&args[0], args_names, fields_names));
+                    bytes.extend(self.load_variable(&args[0], context));
                 } else {
                     bytes.write_u8(OP_NULL).unwrap();
                 }
@@ -599,9 +672,6 @@ impl Emitter {
                 bytes.write_u16::<LittleEndian>(index as u16).unwrap();
             },
             _ => {
-                let getters = vec!["count", "isdone", "type", "name", "supertype"];
-
-                let mut args_names = args_names.clone();
                 let mut minus = 1;
 
                 let self_class = self.classes.get("$self").unwrap();
@@ -612,7 +682,7 @@ impl Emitter {
                             bytes.write_u8(OP_LOAD_MODULE_VAR).unwrap();
                             bytes.write_u16::<LittleEndian>(self.str_index("$self")).unwrap();
 
-                            args_names = fun.args_names.clone();
+                            context.function.args = fun.args_names.clone();
                             minus = 0;
                             break;
                         }
@@ -622,7 +692,7 @@ impl Emitter {
                 let args_count = args.len() - minus;
 
                 let args_ph = if args_count > 0 { format!("_{}", ",_".repeat(args_count - 1)) } else { "".to_string() };
-                let name = if args_count == 0 && getters.contains(&name) { format!("{name}") } else { format!("{name}({args_ph})") };
+                let name = if args_count == 0 && GETTERS.contains(&name) { format!("{name}") } else { format!("{name}({args_ph})") };
                 let name = if name == "isdone" {
                     "isDone".to_string()
                 } else if name == "not()" {
@@ -633,7 +703,7 @@ impl Emitter {
                 self.str_push(&name);
 
                 for a in args {
-                    bytes.extend(self.parse_node(&a, &args_names, fields_names));
+                    bytes.extend(self.parse_node(&a, context));
                 }
 
                 bytes.write_u8(OP_CALL).unwrap();
@@ -645,16 +715,16 @@ impl Emitter {
         bytes
     }
 
-    fn load_variable(&mut self, node: &Node, args_names: &Vec<String>, fields_names: &Vec<String>) -> Vec<u8> {
+    fn load_variable(&mut self, node: &Node, context: &mut Context) -> Vec<u8> {
         let mut bytes = vec![];
 
         match node {
             Node::Identifier(name) => {
-                if args_names.contains(name) {
+                if context.function.args.contains(name) {
                     bytes.write_u8(OP_LOAD_LOCAL_VAR).unwrap();
-                    let index = args_names.iter().position(|r| r == name).unwrap();
+                    let index = context.function.args.iter().position(|r| r == name).unwrap();
                     bytes.write_u16::<LittleEndian>(index as u16).unwrap();
-                } else if fields_names.contains(name) {
+                } else if context.fields.contains(name) {
                     bytes.write_u8(OP_LOAD_FIELD_THIS).unwrap();
                     let index = self.str_index(name);
                     bytes.write_u16::<LittleEndian>(index as u16).unwrap();
@@ -673,20 +743,20 @@ impl Emitter {
         bytes
     }
 
-    fn parse_node(&mut self, node: &Node, args_names: &Vec<String>, fields_names: &Vec<String>) -> Vec<u8> {
+    fn parse_node(&mut self, node: &Node, context: &mut Context) -> Vec<u8> {
         let mut bytes = vec![];
 
         let other = match node {
             Node::String(_) => self.parse_constant(node),
             Node::Integer(_) => self.parse_constant(node),
             Node::Float(_) => self.parse_constant(node),
-            Node::Call { name, args } => self.parse_call(name, args, args_names, fields_names),
+            Node::Call { name, args } => self.parse_call(name, args, context),
             Node::Identifier(name) => {
-                if args_names.contains(name) {
+                if context.function.args.contains(name) {
                     bytes.write_u8(OP_LOAD_LOCAL_VAR).unwrap();
-                    let index = args_names.iter().position(|r| r == name).unwrap();
+                    let index = context.function.args.iter().position(|r| r == name).unwrap();
                     bytes.write_u16::<LittleEndian>(index as u16).unwrap();
-                } else if fields_names.contains(name) {
+                } else if context.fields.contains(name) {
                     bytes.write_u8(OP_LOAD_FIELD_THIS).unwrap();
                     self.str_push(name);
                     let index = self.str_index(name);
@@ -729,7 +799,7 @@ impl Emitter {
                 let mut code = vec![];
                 let body_size = body.len();
                 for (i, o) in body.iter().enumerate() {
-                    code.extend(self.parse_node(o, &args_names, &vec![]));
+                    code.extend(self.parse_node(o, context));
                     if i + 1 < body_size {
                         code.write_u8(OP_POP).unwrap();
                     }
@@ -858,6 +928,7 @@ const OP_JUMP: u8 = 27;
 //const OP_DUP: u8 = 28;
 const OP_LOOP_IF: u8 = 29;
 const OP_IMPORT_MODULE: u8 = 30;
+const OP_SUPER: u8 = 31;
 //const OP_DUMP_STACK: u8 = 255;
 
 const VAL_NULL: u8 = 1;
