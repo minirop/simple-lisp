@@ -504,7 +504,19 @@ impl Emitter {
                 };
                 self.str_push(&name);
 
-                for i in 0..context.function.args.len() {
+                if args_count < args.len() {
+                    panic!("Too many args, expected at most {}, got {}.", args_count, args.len());
+                }
+
+                // this
+                bytes.write_u8(OP_LOAD_LOCAL_VAR).unwrap();
+                bytes.write_u16::<LittleEndian>(0).unwrap();
+
+                for a in args {
+                    bytes.extend(self.parse_node(&a, context));
+                }
+
+                for i in (args.len() + 1)..context.function.args.len() {
                     bytes.write_u8(OP_LOAD_LOCAL_VAR).unwrap();
                     bytes.write_u16::<LittleEndian>(i as u16).unwrap();
                 }
