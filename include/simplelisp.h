@@ -18,7 +18,7 @@ class SimpleListObject;
 #define IS_BOOL(x) std::holds_alternative<bool>(x)
 #define IS_VEC(x) std::holds_alternative<std::vector<Value>>(x)
 #define IS_FUNC(x) std::holds_alternative<Value::Function>(x)
-#define IS_INSTANCE(x) std::holds_alternative<SimpleListObject*>(x)
+#define IS_INSTANCE(x) std::holds_alternative<std::shared_ptr<SimpleListObject>>(x)
 
 #define AS_INT(x) std::get<int>(x)
 #define AS_FLOAT(x) std::get<float>(x)
@@ -38,7 +38,7 @@ public:
     Value(std::vector<Value> v) : inner { v } {}
     Value(std::string name, Function&& f) : name { name }, inner { f } {}
     Value(Function&& f) : inner { f } {}
-    Value(SimpleListObject* obj) : inner { obj } {}
+    Value(SimpleListObject* obj) : inner { std::shared_ptr<SimpleListObject>(obj) } {}
     Value(const Value& v) = default;
     Value(Value&& v) = default;
 
@@ -65,10 +65,21 @@ public:
     {
         if (is_instance())
         {
-            return std::get<SimpleListObject*>(inner);
+            return std::get<std::shared_ptr<SimpleListObject>>(inner).get();
         }
 
         std::cerr << "value is not an instance but " << get_type() << '\n';
+        std::exit(1);
+    }
+
+    std::string as_string() const
+    {
+        if (IS_STR(inner))
+        {
+            return AS_STR(inner);
+        }
+        
+        std::cerr << "value is not an string nor convertible to a string but " << get_type() << '\n';
         std::exit(1);
     }
 
@@ -127,7 +138,7 @@ private:
     friend bool operator==(const Value& lhs, const Value& rhs);
 
     std::string name;
-    std::variant<std::monostate, int, float, std::string, std::vector<Value>, Function, SimpleListObject*> inner;
+    std::variant<std::monostate, int, float, std::string, std::vector<Value>, Function, std::shared_ptr<SimpleListObject>> inner;
 };
 
 std::ostream& operator<<(std::ostream& os, const Value& obj)
@@ -414,5 +425,29 @@ Value operator/(Value lhs, const Value& rhs)
         }
     }
 
+    return Value();
+}
+
+inline Value func_print(Value arg0)
+{
+    std::cout << arg0 << '\n';
+    return Value();
+}
+
+inline Value func_write(Value arg0)
+{
+    std::cout << arg0;
+    return Value();
+}
+
+inline Value func_print(Value arg0, Value arg1)
+{
+    std::cout << arg0 << arg1 << '\n';
+    return Value();
+}
+
+inline Value func_write(Value arg0, Value arg1)
+{
+    std::cout << arg0 << arg1;
     return Value();
 }
