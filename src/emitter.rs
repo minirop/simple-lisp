@@ -22,7 +22,9 @@ pub fn emit(filename: &str) {
         closure_id: 0,
     };
 
-    emitter.parse_root(&nodes);
+    let path = Path::new(filename).with_extension("rock");
+    let filename = path.to_str().unwrap();
+    emitter.parse_root(filename, &nodes);
 }
 
 #[derive(Debug)]
@@ -70,7 +72,7 @@ struct Context {
 const GETTERS: [&str; 5] = ["count", "isdone", "type", "name", "supertype"];
 
 impl Emitter {
-    fn parse_root(&mut self, nodes: &Vec<Node>) {
+    fn parse_root(&mut self, filename: &str, nodes: &Vec<Node>) {
         self.str_push("$self");
 
         self.classes.insert("$self".into(), Class {
@@ -87,7 +89,7 @@ impl Emitter {
                         classname: None,
                         function: FunctionDecl {
                             name: name.clone(),
-                            args: vec![],
+                            args: vec!["this".into()],
                         },
                         fields: vec![],
                     };
@@ -106,7 +108,7 @@ impl Emitter {
                         classname: None,
                         function: FunctionDecl {
                             name: name.clone(),
-                            args: vec![],
+                            args: vec!["this".into()],
                         },
                         fields: vec![],
                     };
@@ -180,7 +182,7 @@ impl Emitter {
             args_names: vec![],
         });
 
-        let mut f = File::create("test.bin").unwrap();
+        let mut f = File::create(filename).unwrap();
 
         f.write(b"ROCK").unwrap();
         f.write_u8(1).unwrap();
@@ -428,6 +430,7 @@ impl Emitter {
                     }
                 }
 
+                let mut has_new_function = false;
                 for elem in args.iter().skip(skipped) {
                     match elem {
                         Node::Call { .. } => {},
@@ -440,6 +443,10 @@ impl Emitter {
                                 },
                                 fields: vec![],
                             };
+
+                            if name == "new" {
+                                has_new_function = true;
+                            }
 
                             for a in params {
                                 context.function.args.push(a.name.clone());
@@ -479,6 +486,15 @@ impl Emitter {
                     };
                 }
 
+                if !has_new_function {
+                    functions.push(Function {
+                        name: "new()".into(),
+                        arity: 0,
+                        args_names: vec!["this".into()],
+                        code: vec![OP_NULL, OP_RETURN],
+                    });
+                }
+
                 let class_obj = self.classes.get_mut(classname.into()).unwrap();
                 class_obj.fields = fields;
                 class_obj.functions = functions;
@@ -487,7 +503,7 @@ impl Emitter {
                 let _parent_class = if let Some(cname) = &context.classname {
                     self.classes.get(cname).unwrap().parent.clone()
                 } else {
-                    panic!("Can't call super outside of a method.");
+                    panic!("Can't call 'super' outside of a method.");
                 };
 
                 let args_count = context.function.args.len() - 1;
@@ -565,30 +581,21 @@ impl Emitter {
                     _ => panic!("'new' expects an identifier. Got {:?}", args[0]),
                 };
 
-                if self.classes.contains_key(name) {
-                    self.str_push(name);
-                    bytes.write_u8(OP_ALLOCATE_VAR).unwrap();
-                    bytes.write_u16::<LittleEndian>(self.str_index(name)).unwrap();
-                } else {
-                    let mut c = name.chars();
-                    let var = match c.next() {
-                        None => String::new(),
-                        Some(first) => first.to_uppercase().to_string(),
-                    };
-                    let name = &format!("{}{}", var, c.as_str());
-                    let new = &format!("new({})", vec!["_"; args.len() - 1].join(","));
-                    self.str_push(new);
-                    self.str_push(name);
+                self.str_push(name);
+                bytes.write_u8(OP_ALLOCATE_VAR).unwrap();
+                bytes.write_u16::<LittleEndian>(self.str_index(name)).unwrap();
+                bytes.write_u8(OP_DUP).unwrap();
 
-                    bytes.write_u8(OP_LOAD_MODULE_VAR).unwrap();
-                    bytes.write_u16::<LittleEndian>(self.str_index(name)).unwrap();
-                    for a in args.iter().skip(1) {
-                        bytes.extend(self.parse_node(&a, context));
-                    }
-                    bytes.write_u8(OP_CALL).unwrap();
-                    bytes.write_u16::<LittleEndian>(self.str_index(new)).unwrap();
-                    bytes.write_u8((args.len() - 1) as u8).unwrap();
+                let new = &format!("new({})", vec!["_"; args.len() - 1].join(","));
+                self.str_push(new);
+
+                for a in args.iter().skip(1) {
+                    bytes.extend(self.parse_node(&a, context));
                 }
+                bytes.write_u8(OP_CALL).unwrap();
+                bytes.write_u16::<LittleEndian>(self.str_index(new)).unwrap();
+                bytes.write_u8((args.len() - 1) as u8).unwrap();
+                bytes.write_u8(OP_POP).unwrap();
             },
             "abort" => {
                 self.str_push("Fiber");
@@ -682,6 +689,36 @@ impl Emitter {
                 self.str_push(name);
                 let index = self.str_index(name);
                 bytes.write_u16::<LittleEndian>(index as u16).unwrap();
+
+                bytes.write_u16::<LittleEndian>((args.len() - 1) as u16).unwrap();
+
+                for arg in args.iter().skip(1) {
+                    match arg {
+                        Node::Call { name, args } => {
+                            self.str_push(name);
+                            let index = self.str_index(name);
+                            bytes.write_u16::<LittleEndian>(index as u16).unwrap();
+                            let Node::Identifier(new_name) = &args[0] else {
+                                panic!("{:?}", args);
+                            };
+
+                            self.str_push(&new_name);
+                            let index = self.str_index(&new_name);
+                            bytes.write_u16::<LittleEndian>(index as u16).unwrap();
+                        },
+                        Node::Identifier(id) => {
+                            self.str_push(id);
+                            let index = self.str_index(id);
+                            bytes.write_u16::<LittleEndian>(index as u16).unwrap();
+                            bytes.write_u16::<LittleEndian>(index as u16).unwrap();
+                        },
+                        _ => panic!("{:?}", arg),
+                    };
+                }
+
+                if Path::new(&format!("{name}.sl")).exists() {
+                    emit(&format!("{name}.sl"));
+                }
             },
             _ => {
                 let mut minus = 1;
@@ -937,7 +974,7 @@ const OP_LOAD_FIELD_THIS: u8 = 24;
 const OP_STORE_FIELD_THIS: u8 = 25;
 const OP_JUMP_IF: u8 = 26;
 const OP_JUMP: u8 = 27;
-//const OP_DUP: u8 = 28;
+const OP_DUP: u8 = 28;
 const OP_LOOP_IF: u8 = 29;
 const OP_IMPORT_MODULE: u8 = 30;
 const OP_SUPER: u8 = 31;
