@@ -72,11 +72,7 @@ impl Generator {
         output.push_str("public:\n");
         output.push_str("    virtual ~SimpleListObject() = default;\n");
         for (f, args_count) in &self.class_functions_names {
-            let mut parameters = vec![];
-            for i in 0..*args_count {
-                parameters.push(format!("Value arg{}", i));
-            }
-            output.push_str(&format!("    virtual Value func_{}({}) {{ return Value(); }}\n", f, parameters.join(", ")));
+            output.push_str(&format!("    virtual Value func_{f}(std::vector<Value> args1) {{ return Value(); }}\n"));
         }
         output.push_str("};\n\n");
         output.push_str("#include \"simplelisp-api.h\"\n\n");
@@ -94,21 +90,11 @@ impl Generator {
 
         for (cf, args_count) in &self.class_functions_names {
             if !self.functions_names.contains(&(cf.clone(), *args_count)) {
-                let mut parameters = vec![];
-                for i in 0..(args_count + 1) {
-                    parameters.push(format!("Value arg{}", i));
-                }
+                output.push_str(&format!("Value func_{}(std::vector<Value> args1) {{\n", cf));
+                output.push_str("if (args1[0].is_instance()) {\n");
+                output.push_str("auto obj = args1[0].as_instance();\n");
 
-                output.push_str(&format!("Value func_{}({}) {{\n", cf, parameters.join(", ")));
-                output.push_str("if (arg0.is_instance()) {\n");
-                output.push_str("auto obj = arg0.as_instance();\n");
-
-                parameters.clear();
-                for i in 1..(args_count + 1) {
-                    parameters.push(format!("arg{}", i));
-                }
-
-                output.push_str(&format!("return obj->func_{cf}({});\n", parameters.join(", ")));
+                output.push_str(&format!("return obj->func_{cf}(args1);\n"));
                 output.push_str("}\n\n");
                 output.push_str(&format!("std::cerr << \"function '{cf}' exists only as a class function.\";\n"));
                 output.push_str("std::exit(1);\n");
@@ -142,10 +128,10 @@ impl Generator {
 
                     let mut parameters = vec![];
                     for p in &params {
-                        parameters.push(format!("Value {}", p.name));
+                        parameters.push(format!("{}", p.name));
                     }
 
-                    header.push_str(&format!("Value func_{}({});", converted_name, parameters.join(", ")));
+                    header.push_str(&format!("Value func_{}(std::vector<Value> args1);", converted_name));
                     self.headers.push(header);
                     self.functions.push(res);
 
@@ -196,7 +182,7 @@ impl Generator {
 
                 let mut parameters = vec![];
                 for p in &params {
-                    parameters.push(format!("Value {}", p.name));
+                    parameters.push(format!("{}", p.name));
                 }
 
                 if self.depth > 0 {
@@ -210,14 +196,14 @@ impl Generator {
                     } else {
                         output.push_str("(");
                     }
-                    output.push_str(&format!("{}) mutable -> Value {{\n", parameters.join(", ")));
+                    output.push_str("std::vector<Value> args1) mutable -> Value {\n");
                 } else {
                     if name.len() > 0 {
                         output.push_str(&format!("Value func_{}", converted_name));
                     } else {
                         output.push_str("(Value::Function([=]");
                     }
-                    output.push_str(&format!("({})", parameters.join(", ")));
+                    output.push_str("(std::vector<Value> args1)");
                     if name.len() == 0 {
                         output.push_str(" mutable -> Value");
                     }
@@ -243,6 +229,9 @@ impl Generator {
                     output.push_str("}\n\n");
                 }
 
+                for (id, name) in parameters.iter().enumerate() {
+                    output.push_str(&format!("Value {name} = args1[{id}];\n"));
+                }
                 output.push_str("Value ret1;\n");
                 if body.len() > 0 {
                     self.depth += 1;
@@ -502,6 +491,18 @@ impl Generator {
                         }
                         ret.push_str("))");
                     },
+                    "lt" => {
+                        ret.push_str(&format!("{} < {}", self.generate_node(args[0].clone()), self.generate_node(args[1].clone())));
+                    },
+                    "eq" => {
+                        ret.push_str(&format!("{} == {}", self.generate_node(args[0].clone()), self.generate_node(args[1].clone())));
+                    },
+                    "add" => {
+                        ret.push_str(&format!("{} + {}", self.generate_node(args[0].clone()), self.generate_node(args[1].clone())));
+                    },
+                    "sub" => {
+                        ret.push_str(&format!("{} - {}", self.generate_node(args[0].clone()), self.generate_node(args[1].clone())));
+                    },
                     _ => {
                         if name == "super" {
                             let cur_meth = self.current_method.as_ref().unwrap();
@@ -521,7 +522,8 @@ impl Generator {
                             }
                         }
 
-                        ret.push_str("(");
+                        ret.push_str("({");
+
                         let mut is_first_arg = true;
                         for p in &args {
                             if !is_first_arg { ret.push_str(", "); }
@@ -538,7 +540,8 @@ impl Generator {
                                 ret.push_str(&p);
                             }
                         }
-                        ret.push_str(")");
+
+                        ret.push_str("})");
                     },
                 };
             },

@@ -18,7 +18,7 @@ public:
 		file_ptr = std::unique_ptr<FILE, FileDeleter>(fopen(filename, "r"));
 	}
 
-	Value func_read() override
+	Value func_read(std::vector<Value> args1) override
 	{
 		FILE * fp = file_ptr.get();
 		fseek(fp, 0, SEEK_END); 
