@@ -39,6 +39,7 @@ public:
     Value(std::string name, Function&& f) : name { name }, inner { f } {}
     Value(Function&& f) : inner { f } {}
     Value(SimpleListObject* obj) : inner { std::shared_ptr<SimpleListObject>(obj) } {}
+    Value(std::shared_ptr<SimpleListObject> obj) : inner { obj } {}
     Value(const Value& v) = default;
     Value(Value&& v) = default;
 
@@ -428,26 +429,21 @@ Value operator/(Value lhs, const Value& rhs)
     return Value();
 }
 
-inline Value func_print(Value arg0)
+inline Value func_print(std::vector<Value> args)
 {
-    std::cout << arg0 << '\n';
+    for (auto & arg : args)
+    {
+        std::cout << arg;
+    }
+    std::cout << '\n';
     return Value();
 }
 
-inline Value func_write(Value arg0)
+inline Value func_write(std::vector<Value> args)
 {
-    std::cout << arg0;
-    return Value();
-}
-
-inline Value func_print(Value arg0, Value arg1)
-{
-    std::cout << arg0 << arg1 << '\n';
-    return Value();
-}
-
-inline Value func_write(Value arg0, Value arg1)
-{
-    std::cout << arg0 << arg1;
+    for (auto & arg : args)
+    {
+        std::cout << arg;
+    }
     return Value();
 }

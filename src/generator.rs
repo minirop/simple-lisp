@@ -11,8 +11,8 @@ use std::process::Command;
 
 struct Generator {
     depth: isize,
-    functions_names: HashSet<(String, usize)>,
-    class_functions_names: HashSet<(String, usize)>,
+    functions_names: HashSet<String>,
+    class_functions_names: HashSet<String>,
     paths: Vec<String>,
     headers: Vec<String>,
     functions: Vec<String>,
@@ -22,6 +22,7 @@ struct Generator {
     current_method: Option<String>,
     current_method_args: Vec<String>,
     classes: HashMap::<String, String>,
+    converted_names: HashMap::<String, String>,
 }
 
 pub fn generate(filename: &str) {
@@ -38,6 +39,7 @@ pub fn generate(filename: &str) {
         current_method: None,
         current_method_args: vec![],
         classes: HashMap::new(),
+        converted_names: HashMap::new(),
     };
     let source = gen.generate(filename);
 
@@ -59,23 +61,39 @@ impl Generator {
         let path = Path::new(filename);
         self.paths.push(path.parent().unwrap().to_str().unwrap().to_string());
 
-        self.class_functions_names.insert(("read".into(), 0));
+        self.class_functions_names.insert("read".into());
         for i in 1..16 {
-            self.functions_names.insert(("print".into(), i));
-            self.functions_names.insert(("write".into(), i));
+            self.functions_names.insert("print".into());
+            self.functions_names.insert("write".into());
         }
 
         self.generate_file(filename);
 
         let mut output = format!("#include \"simplelisp.h\"\n\n");
-        output.push_str("class SimpleListObject {\n");
+        output.push_str("class SimpleListObject : public std::enable_shared_from_this<SimpleListObject> {\n");
         output.push_str("public:\n");
         output.push_str("    virtual ~SimpleListObject() = default;\n");
-        for (f, args_count) in &self.class_functions_names {
-            output.push_str(&format!("    virtual Value func_{f}(std::vector<Value> args1) {{ return Value(); }}\n"));
+        output.push_str("    virtual const char* name() const = 0;\n");
+        for f in &self.class_functions_names {
+            let old_name = if let Some(n) = self.converted_names.get(f) {
+                n
+            } else {
+                f
+            };
+            output.push_str(&format!("    virtual Value func_{f}(std::vector<Value> args1) {{ throw std::string(\"class '\") + name() + \"' does not implement '{old_name}'\"; }}\n"));
         }
         output.push_str("};\n\n");
         output.push_str("#include \"simplelisp-api.h\"\n\n");
+
+        let mut all_functions_names: HashSet<String> = self.functions_names.iter().cloned().collect();
+        for f in &self.class_functions_names {
+            all_functions_names.insert(f.clone());
+        }
+
+        for function in all_functions_names {
+            output.push_str(&format!("Value func_{function}(std::vector<Value> args1);\n"));
+        }
+            output.push_str("\n");
 
         for function in &self.functions {
             output.push_str(&function);
@@ -88,8 +106,8 @@ impl Generator {
         }
         output.push_str("\n");
 
-        for (cf, args_count) in &self.class_functions_names {
-            if !self.functions_names.contains(&(cf.clone(), *args_count)) {
+        for cf in &self.class_functions_names {
+            if !self.functions_names.contains(cf) {
                 output.push_str(&format!("Value func_{}(std::vector<Value> args1) {{\n", cf));
                 output.push_str("if (args1[0].is_instance()) {\n");
                 output.push_str("auto obj = args1[0].as_instance();\n");
@@ -124,18 +142,17 @@ impl Generator {
             match node {
                 Node::Function { name, params, .. } => {
                     let mut header = String::new();
-                    let converted_name = Self::convert_name(&name);
+                    let converted_name = self.convert_name(&name);
 
                     let mut parameters = vec![];
                     for p in &params {
                         parameters.push(format!("{}", p.name));
                     }
 
-                    header.push_str(&format!("Value func_{}(std::vector<Value> args1);", converted_name));
                     self.headers.push(header);
                     self.functions.push(res);
 
-                    self.functions_names.insert((converted_name, params.len()));
+                    self.functions_names.insert(converted_name);
                 },
                 Node::Call { name, args } => {
                     if name == "let" {
@@ -143,13 +160,14 @@ impl Generator {
                             Node::Identifier(s) => s,
                             _ => panic!("{}", args[0]),
                         };
-                        self.headers.push(format!("Value {};\n", Self::convert_name(&varname)));
+                        let new_name = self.convert_name(&varname);
+                        self.headers.push(format!("Value {};\n", new_name));
                         self.depth += 1;
                         self.inside_expression = 1;
                         let n = self.generate_node(args[1].clone());
                         self.inside_expression = 0;
                         self.depth -= 1;
-                        self.main.last_mut().unwrap().push_str(&format!("{} = {};\n", Self::convert_name(&varname), n));
+                        self.main.last_mut().unwrap().push_str(&format!("{} = {};\n", new_name, n));
                     } else {
                         if res.len() > 0 {
                             self.main.last_mut().unwrap().push_str(&format!("{};\n", res));
@@ -178,7 +196,7 @@ impl Generator {
 
                 let mut output = String::new();
 
-                let converted_name = Self::convert_name(&name);
+                let converted_name = self.convert_name(&name);
 
                 let mut parameters = vec![];
                 for p in &params {
@@ -214,9 +232,9 @@ impl Generator {
                 }
 
                 if self.current_class.is_some() {
-                    self.class_functions_names.insert((converted_name.clone(), params.len()));
+                    self.class_functions_names.insert(converted_name.clone(),);
                 } else {
-                    self.functions_names.insert((converted_name.clone(), params.len()));
+                    self.functions_names.insert(converted_name.clone());
                 }
 
                 self.inside_expression = 0;
@@ -274,7 +292,7 @@ impl Generator {
                         };
                         self.depth += 1;
                         self.inside_expression = 1;
-                        ret.push_str(&format!("Value {} = {}", Self::convert_name(&varname), self.generate_node(args[1].clone())));
+                        ret.push_str(&format!("Value {} = {}", self.convert_name(&varname), self.generate_node(args[1].clone())));
                         self.inside_expression = 0;
                         self.depth -= 1;
 
@@ -287,7 +305,7 @@ impl Generator {
                             Node::Identifier(s) => s,
                             _ => panic!("{}", args[0]),
                         };
-                        ret.push_str(&format!("{} = {}", Self::convert_name(&varname), self.generate_node(args[1].clone())));
+                        ret.push_str(&format!("{} = {}", self.convert_name(&varname), self.generate_node(args[1].clone())));
                     },
                     "while" => {
                         ret.push_str("[=]() mutable {\nValue ret1;\nwhile (");
@@ -388,7 +406,7 @@ impl Generator {
                         let mut cout = String::from("std::cout");
                         for (i, arg) in args.iter().enumerate() {
                             let output = match &arg {
-                                Node::Identifier(id) => Self::convert_name(&id),
+                                Node::Identifier(id) => self.convert_name(&id),
                                 _ => self.generate_node(arg.clone()),
                             };
 
@@ -464,6 +482,7 @@ impl Generator {
 
                         header.push_str(&format!("class {name} : public {parent_name} {{\n"));
                         header.push_str("public:\n");
+                        header.push_str(&format!("   virtual const char* name() const override {{ return \"{name}\"; }};\n"));
 
                         self.current_class = Some(name.clone());
                         for elem in args.iter().skip(skip) {
@@ -505,14 +524,14 @@ impl Generator {
                     },
                     _ => {
                         if name == "super" {
-                            let cur_meth = self.current_method.as_ref().unwrap();
-                            let cur_cls = self.current_class.as_ref().unwrap();
-                            let converted_name = Self::convert_name(&cur_meth);
-                            let parent_class_name = self.classes.get(cur_cls).unwrap();
+                            let cur_meth = self.current_method.clone().unwrap();
+                            let cur_cls = self.current_class.clone().unwrap();
+                            let converted_name = self.convert_name(&cur_meth);
+                            let parent_class_name = self.classes.get(&cur_cls).unwrap();
                             ret.push_str(&format!("{parent_class_name}::func_{converted_name}"));
                         } else {
-                            let converted_name = Self::convert_name(&name);
-                            if self.functions_names.contains(&(converted_name.clone(), args.len())) || self.class_functions_names.contains(&(converted_name.clone(), args.len() - 1)) {
+                            let converted_name = self.convert_name(&name);
+                            if self.functions_names.contains(&converted_name) || self.class_functions_names.contains(&converted_name) {
                                 if self.current_class.is_some() {
                                     ret.push_str("::");
                                 }
@@ -529,7 +548,7 @@ impl Generator {
                             if !is_first_arg { ret.push_str(", "); }
                             is_first_arg = false;
 
-                            ret.push_str(&format!("{}", self.generate_node(p.clone())));
+                            ret.push_str(&format!("Value({})", self.generate_node(p.clone())));
                         }
 
                         if args.len() < self.current_method_args.len() {
@@ -548,18 +567,26 @@ impl Generator {
             Node::Integer(i) => ret.push_str(&format!("{i}")),
             Node::Float(f) => ret.push_str(&format!("{f}")),
             Node::String(s) => ret.push_str(&format!("\"{s}\"s")),
-            Node::Identifier(id) => ret.push_str(&format!("{id}")),
+            Node::Identifier(id) => {
+                if id == "this" {
+                    ret.push_str("shared_from_this()");
+                } else {
+                    ret.push_str(&format!("{id}"));
+                }
+            }
             _ => panic!("{:?}", node),
         };
 
         ret
     }
 
-    fn convert_name(name: &str) -> String {
+    fn convert_name(&mut self, name: &str) -> String {
+        let prev = name;
         let name = str::replace(name, "-", "_");
         let name = str::replace(&name, "+", "plus_");
         let name = str::replace(&name, "*", "times_");
         let name = str::replace(&name, "/", "divide_");
+        self.converted_names.insert(name.to_string(), prev.to_string());
         name
     }
 }
