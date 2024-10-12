@@ -93,26 +93,25 @@ impl Generator {
         for function in all_functions_names {
             output.push_str(&format!("Value func_{function}(std::vector<Value> args1);\n"));
         }
-            output.push_str("\n");
+        output.push_str("\n");
+
+        for header in &self.headers {
+            output.push_str(&header);
+        }
+        output.push_str("\n");
 
         for function in &self.functions {
             output.push_str(&function);
             output.push_str("\n");
         }
 
-        for header in &self.headers {
-            output.push_str(&header);
-            output.push_str("\n");
-        }
-        output.push_str("\n");
-
         for cf in &self.class_functions_names {
             if !self.functions_names.contains(cf) {
                 output.push_str(&format!("Value func_{}(std::vector<Value> args1) {{\n", cf));
                 output.push_str("if (args1[0].is_instance()) {\n");
                 output.push_str("auto obj = args1[0].as_instance();\n");
-
-                output.push_str(&format!("return obj->func_{cf}(args1);\n"));
+                output.push_str("auto new_args = std::vector<Value> { args1.begin() + 1, args1.end() };\n");
+                output.push_str(&format!("return obj->func_{cf}(new_args);\n"));
                 output.push_str("}\n\n");
                 output.push_str(&format!("std::cerr << \"function '{cf}' exists only as a class function.\";\n"));
                 output.push_str("std::exit(1);\n");
@@ -141,17 +140,9 @@ impl Generator {
             let res = self.generate_node(node.clone());
             match node {
                 Node::Function { name, params, .. } => {
-                    let mut header = String::new();
                     let converted_name = self.convert_name(&name);
 
-                    let mut parameters = vec![];
-                    for p in &params {
-                        parameters.push(format!("{}", p.name));
-                    }
-
-                    self.headers.push(header);
                     self.functions.push(res);
-
                     self.functions_names.insert(converted_name);
                 },
                 Node::Call { name, args } => {
@@ -198,11 +189,6 @@ impl Generator {
 
                 let converted_name = self.convert_name(&name);
 
-                let mut parameters = vec![];
-                for p in &params {
-                    parameters.push(format!("{}", p.name));
-                }
-
                 if self.depth > 0 {
                     if name.len() > 0 && self.inside_expression == 0 {
                         output.push_str(&format!("auto func_{} = ", converted_name));
@@ -231,15 +217,11 @@ impl Generator {
                     output.push_str(" {\n");
                 }
 
-                if self.current_class.is_some() {
-                    self.class_functions_names.insert(converted_name.clone(),);
-                } else {
-                    self.functions_names.insert(converted_name.clone());
-                }
-
                 self.inside_expression = 0;
 
+                self.class_functions_names.insert(converted_name.clone(),);
                 if self.current_class.is_none() {
+                    self.functions_names.insert(converted_name.clone());
                     output.push_str("if (args1.size() > 0 && args1[0].is_instance()) {\n");
                     output.push_str("auto obj = args1[0].as_instance();\n");
                     output.push_str("auto new_args = std::vector<Value> { args1.begin() + 1, args1.end() };\n");
@@ -247,8 +229,18 @@ impl Generator {
                     output.push_str("}\n\n");
                 }
 
-                for (id, name) in parameters.iter().enumerate() {
-                    output.push_str(&format!("Value {name} = args1[{id}];\n"));
+                for (id, p) in params.iter().enumerate() {
+                    let pname = &p.name;
+                    if let Some(default_value) = &p.default_value {
+                        output.push_str(&format!("Value {pname};\n"));
+                        output.push_str(&format!("if ({id} < args1.size()) {{\n"));
+                        output.push_str(&format!("{pname} = args1[{id}];\n"));
+                        output.push_str("} else {\n");
+                        output.push_str(&format!("{pname} = {default_value};\n"));
+                        output.push_str("}\n");
+                    } else {
+                        output.push_str(&format!("Value {pname} = args1[{id}];\n"));
+                    }
                 }
                 output.push_str("Value ret1;\n");
                 if body.len() > 0 {
@@ -491,7 +483,7 @@ impl Generator {
                         }
                         self.current_class = None;
 
-                        header.push_str("};\n");
+                        header.push_str("};\n\n");
                         self.headers.push(header);
                     },
                     "new" => {
