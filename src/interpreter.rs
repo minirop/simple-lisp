@@ -11,7 +11,7 @@ use rand::Rng;
 
 #[derive(Parser)]
 #[grammar = "simple-lisp.pest"]
-pub struct SimpleListParser;
+pub struct SimpleLispParser;
 
 #[derive(Clone)]
 struct Class {
@@ -86,7 +86,7 @@ impl Visitor {
         };
 
         let data = fs::read_to_string(&filename).unwrap();
-        let res = SimpleListParser::parse(Rule::file, &data);
+        let res = SimpleLispParser::parse(Rule::file, &data);
 
         let ast = match res {
             Ok(pairs) => parse_block(pairs).unwrap(),

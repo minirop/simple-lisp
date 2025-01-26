@@ -9,7 +9,7 @@ use byteorder::{WriteBytesExt, LittleEndian};
 
 pub fn emit(filename: &str) {
     let data = fs::read_to_string(filename).unwrap();
-    let res = SimpleListParser::parse(Rule::file, &data);
+    let res = SimpleLispParser::parse(Rule::file, &data);
 
     let nodes = match res {
         Ok(pairs) => parse_block(pairs).unwrap(),
