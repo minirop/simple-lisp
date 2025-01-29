@@ -9,7 +9,7 @@ mod parser;
 mod interpreter;
 use interpreter::*;
 mod generator;
-use generator::*;
+mod compiler;
 mod emitter;
 use emitter::*;
 
@@ -27,13 +27,19 @@ struct Args {
     /// Emit VM bytecode
     #[arg(short, long)]
     emit: bool,
+
+    /// Emit QBE SSA (barely working)
+    #[arg(short, long)]
+    qbe: bool,
 }
 
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
     if args.compile {
-        generate(&args.input);
+        generator::generate(&args.input);
+    } else if args.qbe {
+        compiler::generate(&args.input);
     } else if args.emit {
         emit(&args.input);
     } else {
